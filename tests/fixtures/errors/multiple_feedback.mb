@@ -1,0 +1,5 @@
+@uri local:example
+
+This content has multiple feedback lines.
+<<< first feedback
+<<< second feedback

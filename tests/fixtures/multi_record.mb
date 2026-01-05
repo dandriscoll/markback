@@ -1,0 +1,25 @@
+@uri local:sample-001
+
+The quick brown fox jumps over the lazy dog.
+<<< neutral; this is a standard pangram for testing
+
+---
+@uri local:sample-002
+
+I absolutely love this product! Best purchase ever!
+<<< positive; tone is overly enthusiastic but genuine
+
+---
+@uri local:sample-003
+
+The service was terrible and I want a refund.
+<<< negative; customer complaint - needs escalation to support team
+
+---
+@uri local:sample-004
+
+Please write a formal letter requesting a meeting.
+<<< good; formality=high; could use more specific date suggestions
+
+---
+@source ./audio/sample-005.wav <<< transcription="Hello world"; quality=clear; language=en

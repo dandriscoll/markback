@@ -1,0 +1,16 @@
+This prompt is too vague.
+<<< rejected; be more specific about the desired output format
+
+---
+Write a poem about nature.
+<<< good; consider adding constraints like length or style
+
+---
+@uri local:code-review-001
+
+def add(a, b): return a + b
+<<< approved; simple and correct, no changes needed
+
+---
+Explain machine learning to a child.
+<<< needs work; the explanation assumes too much prior knowledge

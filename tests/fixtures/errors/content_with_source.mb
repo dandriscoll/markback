@@ -1,0 +1,5 @@
+@uri local:example
+@source ./some/file.txt
+
+This content should not be here when @source is present.
+<<< positive

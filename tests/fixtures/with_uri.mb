@@ -1,0 +1,4 @@
+@uri https://example.com/items/prompt-42
+
+What is the capital of France?
+<<< correct; answer=Paris; difficulty=easy

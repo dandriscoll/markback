@@ -1,0 +1,6 @@
+@source ./photos/IMG_001.jpg <<< approved; scene=beach
+@source ./photos/IMG_002.jpg <<< approved; scene=mountain
+@source ./photos/IMG_003.jpg <<< rejected; too dark
+@source ./photos/IMG_004.jpg <<< approved; scene=city; time=night
+@source ./photos/IMG_005.jpg <<< needs review; possibly inappropriate
+@source ./photos/IMG_006.jpg <<< approved; scene=forest

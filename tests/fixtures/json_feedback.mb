@@ -1,0 +1,4 @@
+@uri local:complex-example
+
+Multi-attribute content with special characters.
+<<< json:{"rating":4.5,"tags":["important","review"],"notes":"Contains quoted text","scores":{"accuracy":0.9,"relevance":0.85}}

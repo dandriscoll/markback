@@ -1,0 +1,2 @@
+@uri local:vacation-photo-001
+@source ./images/beach.jpg <<< appropriate; tags=landscape,beach,sunset; quality=high

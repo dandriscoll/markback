@@ -1,0 +1,2 @@
+@uri local:essay-industrial-revolution
+<<< good; grade=B+; well structured but needs more specific examples
