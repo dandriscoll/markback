@@ -1,0 +1,33 @@
+{
+  "name": "markback",
+  "version": "0.1.0",
+  "description": "MarkBack tooling for JavaScript and TypeScript",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run build",
+    "test": "npm run build && node --test test/*.test.js"
+  },
+  "keywords": [
+    "markback",
+    "linter",
+    "lint",
+    "labels",
+    "feedback"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.0"
+  }
+}
