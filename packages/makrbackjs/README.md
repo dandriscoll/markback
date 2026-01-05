@@ -1,17 +1,17 @@
-# markback
+# makrbackjs
 
 JavaScript/TypeScript linter for the MarkBack format.
 
 ## Install
 
 ```bash
-npm install markback
+npm install makrbackjs
 ```
 
 ## Usage
 
 ```js
-const { lintString, formatDiagnostics } = require("markback");
+const { lintString, formatDiagnostics } = require("makrbackjs");
 
 const text = "Content here.\n<<< positive\n";
 const result = lintString(text, { checkSources: false, checkCanonical: false });
