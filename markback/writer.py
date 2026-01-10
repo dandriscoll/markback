@@ -41,14 +41,18 @@ def write_record_canonical(
         # Compact format: @uri on its own line (if present), then @source ... <<<
         if record.uri:
             lines.append(f"@uri {record.uri}")
+        if record.prior:
+            lines.append(f"@prior {record.prior}")
         lines.append(f"@source {record.source} <<< {record.feedback}")
     else:
         # Full format
-        # Headers: @uri first, then @source
+        # Headers: @uri first, then @source, then @prior
         if record.uri:
             lines.append(f"@uri {record.uri}")
         if record.source:
             lines.append(f"@source {record.source}")
+        if record.prior:
+            lines.append(f"@prior {record.prior}")
 
         # Content block (with blank line if content present)
         if record.has_inline_content():
@@ -147,6 +151,9 @@ def write_label_file(record: Record) -> str:
 
     if record.uri:
         lines.append(f"@uri {record.uri}")
+    
+    if record.prior:
+        lines.append(f"@prior {record.prior}")
 
     lines.append(f"<<< {record.feedback}")
 

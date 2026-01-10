@@ -82,6 +82,51 @@ class TestWriteRecordCanonical:
         assert "@uri local:item-1" in result
         assert "@source ./data.txt <<< good" in result
 
+    def test_record_with_prior(self):
+        """Test writing a record with @prior header."""
+        record = Record(
+            feedback="accurate",
+            uri="local:gen-001",
+            prior=SourceRef("./prompts/prompt.txt"),
+            source=SourceRef("./images/gen.jpg"),
+        )
+        result = write_record_canonical(record, prefer_compact=True)
+
+        assert "@uri local:gen-001" in result
+        assert "@prior ./prompts/prompt.txt" in result
+        assert "@source ./images/gen.jpg <<< accurate" in result
+
+    def test_record_with_prior_full_format(self):
+        """Test writing a record with @prior in full format."""
+        record = Record(
+            feedback="creative",
+            uri="local:text-001",
+            prior=SourceRef("./prompts/haiku.txt"),
+            content="Cherry blossoms fall",
+        )
+        result = write_record_canonical(record, prefer_compact=False)
+
+        lines = result.strip().split('\n')
+        assert "@uri local:text-001" in result
+        assert "@prior ./prompts/haiku.txt" in result
+        assert "Cherry blossoms fall" in result
+        assert "<<< creative" in result
+
+    def test_record_with_prior_no_source(self):
+        """Test writing a record with @prior but no @source."""
+        record = Record(
+            feedback="good",
+            uri="local:item",
+            prior=SourceRef("./input.txt"),
+            content="Generated content here",
+        )
+        result = write_record_canonical(record, prefer_compact=False)
+
+        assert "@uri local:item" in result
+        assert "@prior ./input.txt" in result
+        assert "Generated content here" in result
+        assert "<<< good" in result
+
     def test_multiline_content(self):
         """Test writing multiline content."""
         record = Record(
@@ -164,6 +209,19 @@ class TestWriteLabelFile:
 
         assert "@uri local:item-1" in result
         assert "<<< approved" in result
+
+    def test_label_with_prior(self):
+        """Test writing a label file with @prior."""
+        record = Record(
+            feedback="accurate",
+            uri="local:gen-001",
+            prior=SourceRef("./prompts/prompt.txt"),
+        )
+        result = write_label_file(record)
+
+        assert "@uri local:gen-001" in result
+        assert "@prior ./prompts/prompt.txt" in result
+        assert "<<< accurate" in result
 
 
 class TestWriteFile:
