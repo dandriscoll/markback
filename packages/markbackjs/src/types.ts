@@ -142,6 +142,7 @@ export interface RecordInit {
   feedback: string;
   uri?: string | null;
   source?: SourceRef | null;
+  prior?: SourceRef | null;
   content?: string | null;
   metadata?: UnknownMap;
   _sourceFile?: string | null;
@@ -154,6 +155,7 @@ export class Record {
   feedback: string;
   uri: string | null;
   source: SourceRef | null;
+  prior: SourceRef | null;
   content: string | null;
   metadata: UnknownMap;
   _sourceFile: string | null;
@@ -165,6 +167,7 @@ export class Record {
     this.feedback = init.feedback;
     this.uri = init.uri ?? null;
     this.source = init.source ?? null;
+    this.prior = init.prior ?? null;
     this.content = init.content ?? null;
     this.metadata = init.metadata ?? {};
     this._sourceFile = init._sourceFile ?? null;
@@ -191,6 +194,7 @@ export class Record {
     return {
       uri: this.uri,
       source: this.source ? this.source.toString() : null,
+      prior: this.prior ? this.prior.toString() : null,
       content: this.content,
       feedback: this.feedback,
       metadata: this.metadata,
