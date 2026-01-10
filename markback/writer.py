@@ -38,7 +38,7 @@ def write_record_canonical(
     )
 
     if use_compact:
-        # Compact format: @uri on its own line (if present), then @source ... <<<
+        # Compact format: @uri on its own line (if present), then @prior, then @source ... <<<
         if record.uri:
             lines.append(f"@uri {record.uri}")
         if record.prior:
@@ -46,13 +46,13 @@ def write_record_canonical(
         lines.append(f"@source {record.source} <<< {record.feedback}")
     else:
         # Full format
-        # Headers: @uri first, then @source, then @prior
+        # Headers: @uri first, then @prior, then @source
         if record.uri:
             lines.append(f"@uri {record.uri}")
-        if record.source:
-            lines.append(f"@source {record.source}")
         if record.prior:
             lines.append(f"@prior {record.prior}")
+        if record.source:
+            lines.append(f"@source {record.source}")
 
         # Content block (with blank line if content present)
         if record.has_inline_content():

@@ -460,7 +460,7 @@ Canonical form ensures consistent output for comparison and version control.
 ### 5.2 Canonicalization Rules
 
 1. **Line endings:** Normalize to `\n` (LF)
-2. **Header order:** `@uri` before `@source` before `@prior` before unknown headers (alphabetical)
+2. **Header order:** `@uri` before `@prior` before `@source` before unknown headers (alphabetical)
 3. **Header spacing:** Exactly one space after keyword
 4. **Trailing whitespace:** Remove from all lines
 5. **Content whitespace:** Preserve internal whitespace; trim leading/trailing blank lines
