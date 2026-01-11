@@ -20,10 +20,16 @@ export function writeRecordCanonical(record: Record, preferCompact = true): stri
     if (record.uri) {
       lines.push(`@uri ${record.uri}`);
     }
+    if (record.prior) {
+      lines.push(`@prior ${record.prior}`);
+    }
     lines.push(`@source ${record.source} <<< ${record.feedback}`);
   } else {
     if (record.uri) {
       lines.push(`@uri ${record.uri}`);
+    }
+    if (record.prior) {
+      lines.push(`@prior ${record.prior}`);
     }
     if (record.source) {
       lines.push(`@source ${record.source}`);

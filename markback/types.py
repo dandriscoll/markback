@@ -122,6 +122,7 @@ class Record:
     feedback: str
     uri: Optional[str] = None
     source: Optional[SourceRef] = None
+    prior: Optional[SourceRef] = None
     content: Optional[str] = None
     metadata: dict = field(default_factory=dict)
 
@@ -154,6 +155,7 @@ class Record:
         return {
             "uri": self.uri,
             "source": str(self.source) if self.source else None,
+            "prior": str(self.prior) if self.prior else None,
             "content": self.content,
             "feedback": self.feedback,
             "metadata": self.metadata,
