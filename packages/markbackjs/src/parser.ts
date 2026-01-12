@@ -1,6 +1,6 @@
 import { Diagnostic, ErrorCode, ParseResult, Record as MarkbackRecord, Severity, SourceRef, WarningCode } from "./types";
 
-const KNOWN_HEADERS = new Set(["uri", "source"]);
+const KNOWN_HEADERS = new Set(["uri", "source", "prior"]);
 
 const HEADER_PATTERN = /^@([a-z]+)\s+(.+)$/;
 const FEEDBACK_DELIMITER = "<<<";
@@ -116,6 +116,8 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
     const uri = currentHeaders.uri ?? pendingUri;
     const sourceStr = currentHeaders.source;
     const source = sourceStr ? new SourceRef(sourceStr) : null;
+    const priorStr = currentHeaders.prior;
+    const prior = priorStr ? new SourceRef(priorStr) : null;
 
     let content: string | null = null;
     if (currentContentLines.length > 0) {
@@ -134,6 +136,7 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
         feedback,
         uri: uri ?? null,
         source,
+        prior,
         content,
         _sourceFile: sourceFile ?? null,
         _startLine: currentStartLine,
@@ -199,12 +202,15 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
       }
 
       const uri = pendingUri ?? currentHeaders.uri ?? null;
+      const priorStr = currentHeaders.prior;
+      const prior = priorStr ? new SourceRef(priorStr) : null;
 
       records.push(
       new MarkbackRecord({
           feedback: feedback ?? "",
           uri,
           source,
+          prior,
           content: null,
           _sourceFile: sourceFile ?? null,
           _startLine: currentStartLine,

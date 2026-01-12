@@ -79,3 +79,15 @@ test("summarizeResults: shape", () => {
   assert.equal(typeof summary.errors, "number");
   assert.equal(typeof summary.warnings, "number");
 });
+
+test("lintString: @prior header", () => {
+  const text = "@uri local:gen-001\n@prior ./prompts/prompt.txt\n@source ./images/gen.jpg\n<<< accurate\n";
+  const result = lintString(text, { checkSources: false, checkCanonical: false });
+  assert.equal(result.hasErrors, false);
+});
+
+test("lintString: compact record with @prior", () => {
+  const text = "@uri local:img-001\n@prior ./prompts/prompt.txt\n@source ./images/gen.jpg <<< good\n";
+  const result = lintString(text, { checkSources: false, checkCanonical: false });
+  assert.equal(result.hasErrors, false);
+});

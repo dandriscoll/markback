@@ -230,6 +230,58 @@ Content 2.
         warnings = [d for d in result.diagnostics if d.severity == Severity.WARNING]
         assert any(d.code == WarningCode.W002 for d in warnings)
 
+    def test_record_with_prior(self):
+        """Test parsing a record with @prior header."""
+        text = """@uri local:generated-001
+@prior ./prompts/prompt.txt
+@source ./images/generated.jpg
+<<< accurate; matches prompt well
+"""
+        result = parse_string(text)
+
+        assert len(result.records) == 1
+        record = result.records[0]
+        assert record.uri == "local:generated-001"
+        assert record.prior == SourceRef("./prompts/prompt.txt")
+        assert record.source == SourceRef("./images/generated.jpg")
+        assert record.feedback == "accurate; matches prompt well"
+
+    def test_record_with_prior_and_inline_content(self):
+        """Test parsing a record with @prior and inline content."""
+        text = """@uri local:text-001
+@prior ./prompts/haiku.txt
+
+Cherry blossoms fall
+Petals dance on gentle breeze
+Spring whispers goodbye
+<<< creative; follows structure
+"""
+        result = parse_string(text)
+
+        assert len(result.records) == 1
+        record = result.records[0]
+        assert record.uri == "local:text-001"
+        assert record.prior == SourceRef("./prompts/haiku.txt")
+        assert record.source is None
+        assert "Cherry blossoms fall" in record.content
+        assert record.feedback == "creative; follows structure"
+
+    def test_compact_record_with_prior(self):
+        """Test parsing a compact record with preceding @prior."""
+        text = """@uri local:img-001
+@prior ./prompts/prompt1.txt
+@source ./images/gen1.jpg <<< good
+"""
+        result = parse_string(text)
+
+        assert len(result.records) == 1
+        record = result.records[0]
+        assert record.uri == "local:img-001"
+        assert record.prior == SourceRef("./prompts/prompt1.txt")
+        assert record.source == SourceRef("./images/gen1.jpg")
+        assert record.feedback == "good"
+        assert record._is_compact
+
 
 class TestParseFile:
     """Tests for parsing files from fixtures."""
