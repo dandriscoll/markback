@@ -110,6 +110,94 @@ def lint_source_exists(
     return diagnostics
 
 
+def lint_prior_exists(
+    record: Record,
+    base_path: Optional[Path],
+    record_idx: int,
+) -> list[Diagnostic]:
+    """Check if @prior file exists."""
+    diagnostics: list[Diagnostic] = []
+
+    if record.prior and not record.prior.is_uri:
+        try:
+            resolved = record.prior.resolve(base_path)
+            if not resolved.exists():
+                diagnostics.append(Diagnostic(
+                    file=record._source_file,
+                    line=record._start_line,
+                    column=None,
+                    severity=Severity.WARNING,
+                    code=WarningCode.W009,
+                    message=f"@prior file not found: {record.prior}",
+                    record_index=record_idx,
+                ))
+        except ValueError:
+            pass  # URI that can't be resolved to path
+
+    return diagnostics
+
+
+def _is_position_invalid(source_ref) -> tuple[bool, str]:
+    """Check if a SourceRef has an invalid position range.
+
+    Returns (is_invalid, error_message).
+    Position is invalid if:
+    - end_line < start_line
+    - end_line == start_line and end_column < start_column
+    """
+    if source_ref.start_line is None or source_ref.end_line is None:
+        return False, ""
+
+    if source_ref.end_line < source_ref.start_line:
+        return True, f"end line {source_ref.end_line} is less than start line {source_ref.start_line}"
+
+    if source_ref.end_line == source_ref.start_line:
+        if (source_ref.start_column is not None and
+            source_ref.end_column is not None and
+            source_ref.end_column < source_ref.start_column):
+            return True, f"end column {source_ref.end_column} is less than start column {source_ref.start_column} on line {source_ref.start_line}"
+
+    return False, ""
+
+
+def lint_line_range(
+    record: Record,
+    record_idx: int,
+) -> list[Diagnostic]:
+    """Check if line/character ranges are valid (end position >= start position)."""
+    diagnostics: list[Diagnostic] = []
+
+    # Check @source range
+    if record.source and record.source.start_line is not None:
+        is_invalid, error_msg = _is_position_invalid(record.source)
+        if is_invalid:
+            diagnostics.append(Diagnostic(
+                file=record._source_file,
+                line=record._start_line,
+                column=None,
+                severity=Severity.ERROR,
+                code=ErrorCode.E011,
+                message=f"Invalid range in @source: {error_msg}",
+                record_index=record_idx,
+            ))
+
+    # Check @prior range
+    if record.prior and record.prior.start_line is not None:
+        is_invalid, error_msg = _is_position_invalid(record.prior)
+        if is_invalid:
+            diagnostics.append(Diagnostic(
+                file=record._source_file,
+                line=record._start_line,
+                column=None,
+                severity=Severity.ERROR,
+                code=ErrorCode.E011,
+                message=f"Invalid range in @prior: {error_msg}",
+                record_index=record_idx,
+            ))
+
+    return diagnostics
+
+
 def lint_canonical_format(
     records: list[Record],
     original_text: str,
@@ -173,10 +261,14 @@ def lint_string(
                 idx,
             ))
 
-        # Check source file existence
+        # Check source and prior file existence
         if check_sources:
             base_path = source_file.parent if source_file else None
             result.diagnostics.extend(lint_source_exists(record, base_path, idx))
+            result.diagnostics.extend(lint_prior_exists(record, base_path, idx))
+
+        # Check line range validity
+        result.diagnostics.extend(lint_line_range(record, idx))
 
     # Check canonical format
     if check_canonical and result.records and not result.has_errors:

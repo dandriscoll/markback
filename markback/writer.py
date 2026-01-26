@@ -38,17 +38,21 @@ def write_record_canonical(
     )
 
     if use_compact:
-        # Compact format: @uri on its own line (if present), then @prior, then @source ... <<<
+        # Compact format: @uri, @by, @prior on own lines (if present), then @source ... <<<
         if record.uri:
             lines.append(f"@uri {record.uri}")
+        if record.by:
+            lines.append(f"@by {record.by}")
         if record.prior:
             lines.append(f"@prior {record.prior}")
         lines.append(f"@source {record.source} <<< {record.feedback}")
     else:
         # Full format
-        # Headers: @uri first, then @prior, then @source
+        # Headers: @uri first, then @by, then @prior, then @source
         if record.uri:
             lines.append(f"@uri {record.uri}")
+        if record.by:
+            lines.append(f"@by {record.by}")
         if record.prior:
             lines.append(f"@prior {record.prior}")
         if record.source:
@@ -151,7 +155,10 @@ def write_label_file(record: Record) -> str:
 
     if record.uri:
         lines.append(f"@uri {record.uri}")
-    
+
+    if record.by:
+        lines.append(f"@by {record.by}")
+
     if record.prior:
         lines.append(f"@prior {record.prior}")
 

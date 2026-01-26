@@ -123,6 +123,25 @@ Content 2.
         warnings = [d for d in result.diagnostics if d.code == WarningCode.W002]
         assert len(warnings) == 1
 
+    def test_prior_file_not_found_warning(self):
+        """Test W009: @prior file not found."""
+        text = "@uri local:example\n@prior ./nonexistent_prior.txt\n@source ./nonexistent.txt\n<<< good\n"
+        result = lint_string(text, check_sources=True, check_canonical=False)
+
+        # Should have W009 for @prior and W003 for @source
+        prior_warnings = [d for d in result.diagnostics if d.code == WarningCode.W009]
+        assert len(prior_warnings) == 1
+        assert "@prior file not found" in prior_warnings[0].message
+
+    def test_prior_uri_not_checked(self):
+        """Test that @prior URIs are not checked for file existence."""
+        text = "@uri local:example\n@prior https://example.com/prior.txt\n\nContent.\n<<< good\n"
+        result = lint_string(text, check_sources=True, check_canonical=False)
+
+        # Should not have W009 for URI-based @prior
+        prior_warnings = [d for d in result.diagnostics if d.code == WarningCode.W009]
+        assert len(prior_warnings) == 0
+
 
 class TestLintFile:
     """Tests for lint_file function."""
@@ -226,3 +245,211 @@ class TestSummarizeResults:
         assert "records" in summary
         assert "errors" in summary
         assert "warnings" in summary
+
+
+class TestLineRangeSupport:
+    """Tests for line range support in @source and @prior."""
+
+    def test_source_with_single_line(self):
+        """Test @source with single line reference."""
+        text = "@source ./code.py:42 <<< good\n"
+        result = lint_string(text, check_sources=False, check_canonical=False)
+
+        assert not result.has_errors
+        assert result.records[0].source is not None
+        assert result.records[0].source.path == "./code.py"
+        assert result.records[0].source.start_line == 42
+        assert result.records[0].source.end_line == 42
+
+    def test_source_with_line_range(self):
+        """Test @source with line range reference."""
+        text = "@source ./code.py:10-20 <<< good\n"
+        result = lint_string(text, check_sources=False, check_canonical=False)
+
+        assert not result.has_errors
+        assert result.records[0].source is not None
+        assert result.records[0].source.path == "./code.py"
+        assert result.records[0].source.start_line == 10
+        assert result.records[0].source.end_line == 20
+
+    def test_prior_with_line_range(self):
+        """Test @prior with line range reference."""
+        text = "@prior ./prompts/template.txt:1-20\n@source ./output.txt\n<<< good\n"
+        result = lint_string(text, check_sources=False, check_canonical=False)
+
+        assert not result.has_errors
+        assert result.records[0].prior is not None
+        assert result.records[0].prior.path == "./prompts/template.txt"
+        assert result.records[0].prior.start_line == 1
+        assert result.records[0].prior.end_line == 20
+
+    def test_compact_record_with_line_range(self):
+        """Test compact record with line range in @source."""
+        text = "@uri local:item-001\n@source ./file.txt:100-150 <<< feedback\n"
+        result = lint_string(text, check_sources=False, check_canonical=False)
+
+        assert not result.has_errors
+        assert result.records[0].source is not None
+        assert result.records[0].source.path == "./file.txt"
+        assert result.records[0].source.start_line == 100
+        assert result.records[0].source.end_line == 150
+
+    def test_uri_with_line_range(self):
+        """Test URI source with line range."""
+        text = "@source https://example.com/file.txt:100-150 <<< good\n"
+        result = lint_string(text, check_sources=False, check_canonical=False)
+
+        assert not result.has_errors
+        assert result.records[0].source is not None
+        assert result.records[0].source.path == "https://example.com/file.txt"
+        assert result.records[0].source.start_line == 100
+        assert result.records[0].source.end_line == 150
+        assert result.records[0].source.is_uri
+
+    def test_invalid_line_range_end_less_than_start(self):
+        """Test E011: Invalid line range (end < start)."""
+        text = "@source ./code.py:50-10 <<< good\n"
+        result = lint_string(text, check_sources=False, check_canonical=False)
+
+        assert result.has_errors
+        errors = [d for d in result.diagnostics if d.code == ErrorCode.E011]
+        assert len(errors) == 1
+        assert "end line 10 is less than start line 50" in errors[0].message
+
+    def test_source_without_line_range(self):
+        """Test @source without line range still works."""
+        text = "@source ./code.py <<< good\n"
+        result = lint_string(text, check_sources=False, check_canonical=False)
+
+        assert not result.has_errors
+        assert result.records[0].source is not None
+        assert result.records[0].source.path == "./code.py"
+        assert result.records[0].source.start_line is None
+        assert result.records[0].source.end_line is None
+
+
+class TestByHeader:
+    """Tests for @by header support."""
+
+    def test_by_header_basic(self):
+        """Test basic @by header parsing."""
+        text = "@uri local:example\n@by dan@example.com\n\nContent.\n<<< good\n"
+        result = lint_string(text, check_sources=False, check_canonical=False)
+
+        assert not result.has_errors
+        assert result.records[0].by == "dan@example.com"
+
+    def test_by_header_with_spaces(self):
+        """Test @by header with freeform text."""
+        text = "@uri local:example\n@by Dan Driscoll\n\nContent.\n<<< good\n"
+        result = lint_string(text, check_sources=False, check_canonical=False)
+
+        assert not result.has_errors
+        assert result.records[0].by == "Dan Driscoll"
+
+    def test_by_header_compact_record(self):
+        """Test @by header with compact record."""
+        text = "@uri local:item-001\n@by reviewer@example.com\n@source ./file.txt <<< feedback\n"
+        result = lint_string(text, check_sources=False, check_canonical=False)
+
+        assert not result.has_errors
+        assert result.records[0].by == "reviewer@example.com"
+
+    def test_by_header_with_prior(self):
+        """Test @by header combined with @prior."""
+        text = "@uri local:gen-001\n@by ai-trainer@example.com\n@prior ./prompts/prompt.txt\n@source ./output.txt\n<<< good\n"
+        result = lint_string(text, check_sources=False, check_canonical=False)
+
+        assert not result.has_errors
+        assert result.records[0].by == "ai-trainer@example.com"
+        assert result.records[0].prior is not None
+
+
+class TestCharacterLevelReferencing:
+    """Tests for character-level referencing syntax."""
+
+    def test_source_with_single_position(self):
+        """Test @source with single position (line:col)."""
+        text = "@source ./code.py:42:10 <<< good\n"
+        result = lint_string(text, check_sources=False, check_canonical=False)
+
+        assert not result.has_errors
+        assert result.records[0].source is not None
+        assert result.records[0].source.path == "./code.py"
+        assert result.records[0].source.start_line == 42
+        assert result.records[0].source.start_column == 10
+        assert result.records[0].source.end_line == 42
+        assert result.records[0].source.end_column == 10
+
+    def test_source_with_character_range_same_line(self):
+        """Test @source with character range on same line."""
+        text = "@source ./code.py:42:10-42:25 <<< good\n"
+        result = lint_string(text, check_sources=False, check_canonical=False)
+
+        assert not result.has_errors
+        assert result.records[0].source is not None
+        assert result.records[0].source.path == "./code.py"
+        assert result.records[0].source.start_line == 42
+        assert result.records[0].source.start_column == 10
+        assert result.records[0].source.end_line == 42
+        assert result.records[0].source.end_column == 25
+
+    def test_source_with_character_range_multi_line(self):
+        """Test @source with character range spanning multiple lines."""
+        text = "@source ./code.py:10:5-15:20 <<< good\n"
+        result = lint_string(text, check_sources=False, check_canonical=False)
+
+        assert not result.has_errors
+        assert result.records[0].source is not None
+        assert result.records[0].source.path == "./code.py"
+        assert result.records[0].source.start_line == 10
+        assert result.records[0].source.start_column == 5
+        assert result.records[0].source.end_line == 15
+        assert result.records[0].source.end_column == 20
+
+    def test_prior_with_character_range(self):
+        """Test @prior with character range."""
+        text = "@prior ./prompts/template.txt:1:1-20:50\n@source ./output.txt\n<<< good\n"
+        result = lint_string(text, check_sources=False, check_canonical=False)
+
+        assert not result.has_errors
+        assert result.records[0].prior is not None
+        assert result.records[0].prior.path == "./prompts/template.txt"
+        assert result.records[0].prior.start_line == 1
+        assert result.records[0].prior.start_column == 1
+        assert result.records[0].prior.end_line == 20
+        assert result.records[0].prior.end_column == 50
+
+    def test_invalid_character_range_end_column_less_than_start(self):
+        """Test E011: Invalid character range (end col < start col on same line)."""
+        text = "@source ./code.py:42:25-42:10 <<< good\n"
+        result = lint_string(text, check_sources=False, check_canonical=False)
+
+        assert result.has_errors
+        errors = [d for d in result.diagnostics if d.code == ErrorCode.E011]
+        assert len(errors) == 1
+        assert "end column 10 is less than start column 25" in errors[0].message
+
+    def test_line_range_without_columns_still_works(self):
+        """Test that line ranges without columns still work."""
+        text = "@source ./code.py:10-20 <<< good\n"
+        result = lint_string(text, check_sources=False, check_canonical=False)
+
+        assert not result.has_errors
+        assert result.records[0].source is not None
+        assert result.records[0].source.start_line == 10
+        assert result.records[0].source.start_column is None
+        assert result.records[0].source.end_line == 20
+        assert result.records[0].source.end_column is None
+
+    def test_mixed_column_specification(self):
+        """Test range with start column but no end column."""
+        text = "@source ./code.py:10:5-20 <<< good\n"
+        result = lint_string(text, check_sources=False, check_canonical=False)
+
+        assert not result.has_errors
+        assert result.records[0].source is not None
+        assert result.records[0].source.start_line == 10
+        assert result.records[0].source.start_column == 5
+        assert result.records[0].source.end_line == 20
+        assert result.records[0].source.end_column is None

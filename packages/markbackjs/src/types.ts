@@ -17,6 +17,7 @@ export enum ErrorCode {
   E008 = "E008",
   E009 = "E009",
   E010 = "E010",
+  E011 = "E011",
 }
 
 export enum WarningCode {
@@ -28,6 +29,7 @@ export enum WarningCode {
   W006 = "W006",
   W007 = "W007",
   W008 = "W008",
+  W009 = "W009",
 }
 
 export type DiagnosticCode = ErrorCode | WarningCode;
@@ -98,39 +100,112 @@ function extractScheme(value: string): string | null {
   return match ? match[1] : null;
 }
 
+// Regex to parse line/character range from a path
+// Supports: path:line, path:line:col, path:line-line, path:line:col-line:col
+const LINE_RANGE_PATTERN = /^(.+?):(\d+)(?::(\d+))?(?:-(\d+)(?::(\d+))?)?$/;
+
 export class SourceRef {
   value: string;
   isUri: boolean;
+  startLine: number | null;
+  endLine: number | null;
+  startColumn: number | null;
+  endColumn: number | null;
+  private _pathOnly: string;
 
   constructor(value: string, isUri = false) {
     this.value = value;
+    this.startLine = null;
+    this.endLine = null;
+    this.startColumn = null;
+    this.endColumn = null;
+    this._pathOnly = value;
+
+    // Parse line range if present
+    this._parseLineRange();
+
     if (isUri) {
       this.isUri = true;
       return;
     }
 
-    const scheme = extractScheme(value);
+    // Determine if this is a URI (using path without line range)
+    const scheme = extractScheme(this._pathOnly);
     this.isUri = !!scheme && scheme.length > 1;
+  }
+
+  private _parseLineRange(): void {
+    const match = LINE_RANGE_PATTERN.exec(this.value);
+    if (match) {
+      this._pathOnly = match[1];
+      this.startLine = parseInt(match[2], 10);
+      if (match[3]) {
+        this.startColumn = parseInt(match[3], 10);
+      }
+      if (match[4]) {
+        this.endLine = parseInt(match[4], 10);
+        if (match[5]) {
+          this.endColumn = parseInt(match[5], 10);
+        }
+      } else {
+        // Single line/position reference: start and end are the same
+        this.endLine = this.startLine;
+        this.endColumn = this.startColumn;
+      }
+    }
+  }
+
+  get path(): string {
+    return this._pathOnly;
+  }
+
+  get lineRangeStr(): string | null {
+    if (this.startLine === null) {
+      return null;
+    }
+
+    // Build start position
+    let start: string;
+    if (this.startColumn !== null) {
+      start = `:${this.startLine}:${this.startColumn}`;
+    } else {
+      start = `:${this.startLine}`;
+    }
+
+    // Check if end is the same as start (single position)
+    if (this.startLine === this.endLine && this.startColumn === this.endColumn) {
+      return start;
+    }
+
+    // Build end position
+    let end: string;
+    if (this.endColumn !== null) {
+      end = `-${this.endLine}:${this.endColumn}`;
+    } else {
+      end = `-${this.endLine}`;
+    }
+
+    return `${start}${end}`;
   }
 
   resolve(basePath?: string | null): string {
     if (this.isUri) {
-      const scheme = extractScheme(this.value);
+      const scheme = extractScheme(this._pathOnly);
       if (scheme && scheme.toLowerCase() === "file") {
-        return fileURLToPath(new URL(this.value));
+        return fileURLToPath(new URL(this._pathOnly));
       }
       throw new Error(`Cannot resolve non-file URI to path: ${this.value}`);
     }
 
-    if (path.isAbsolute(this.value)) {
-      return this.value;
+    if (path.isAbsolute(this._pathOnly)) {
+      return this._pathOnly;
     }
 
     if (basePath) {
-      return path.join(basePath, this.value);
+      return path.join(basePath, this._pathOnly);
     }
 
-    return this.value;
+    return this._pathOnly;
   }
 
   toString(): string {
@@ -141,6 +216,7 @@ export class SourceRef {
 export interface RecordInit {
   feedback: string;
   uri?: string | null;
+  by?: string | null;
   source?: SourceRef | null;
   prior?: SourceRef | null;
   content?: string | null;
@@ -154,6 +230,7 @@ export interface RecordInit {
 export class Record {
   feedback: string;
   uri: string | null;
+  by: string | null;
   source: SourceRef | null;
   prior: SourceRef | null;
   content: string | null;
@@ -166,6 +243,7 @@ export class Record {
   constructor(init: RecordInit) {
     this.feedback = init.feedback;
     this.uri = init.uri ?? null;
+    this.by = init.by ?? null;
     this.source = init.source ?? null;
     this.prior = init.prior ?? null;
     this.content = init.content ?? null;
@@ -193,6 +271,7 @@ export class Record {
   toDict(): UnknownMap {
     return {
       uri: this.uri,
+      by: this.by,
       source: this.source ? this.source.toString() : null,
       prior: this.prior ? this.prior.toString() : null,
       content: this.content,

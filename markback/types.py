@@ -1,5 +1,6 @@
 """Core types for MarkBack format."""
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -25,6 +26,7 @@ class ErrorCode(Enum):
     E008 = "E008"  # Unclosed quote in structured attribute value
     E009 = "E009"  # Empty feedback (nothing after <<< )
     E010 = "E010"  # Missing blank line before inline content
+    E011 = "E011"  # Invalid line range (end < start)
 
 
 class WarningCode(Enum):
@@ -37,6 +39,7 @@ class WarningCode(Enum):
     W006 = "W006"  # Missing @uri (record has no identifier)
     W007 = "W007"  # Paired feedback file not found
     W008 = "W008"  # Non-canonical formatting detected
+    W009 = "W009"  # @prior file not found
 
 
 @dataclass
@@ -75,29 +78,90 @@ class Diagnostic:
         }
 
 
+# Regex to parse line/character range from a path
+# Supports: path:line, path:line:col, path:line-line, path:line:col-line:col
+_LINE_RANGE_PATTERN = re.compile(r'^(.+?):(\d+)(?::(\d+))?(?:-(\d+)(?::(\d+))?)?$')
+
+
 @dataclass
 class SourceRef:
     """Reference to external content (file path or URI)."""
     value: str
     is_uri: bool = False
+    start_line: Optional[int] = None
+    end_line: Optional[int] = None
+    start_column: Optional[int] = None
+    end_column: Optional[int] = None
+    _path_only: str = ""
 
     def __post_init__(self):
-        # Determine if this is a URI or file path
+        # Parse line range if present
+        self._parse_line_range()
+
+        # Determine if this is a URI or file path (using path without line range)
         if not self.is_uri:
-            parsed = urlparse(self.value)
+            parsed = urlparse(self._path_only)
             # Consider it a URI if it has a scheme that's not a Windows drive letter
             self.is_uri = bool(parsed.scheme) and len(parsed.scheme) > 1
+
+    def _parse_line_range(self):
+        """Parse optional line/character range from value."""
+        match = _LINE_RANGE_PATTERN.match(self.value)
+        if match:
+            self._path_only = match.group(1)
+            self.start_line = int(match.group(2))
+            if match.group(3):
+                self.start_column = int(match.group(3))
+            if match.group(4):
+                self.end_line = int(match.group(4))
+                if match.group(5):
+                    self.end_column = int(match.group(5))
+            else:
+                # Single line/position reference: start and end are the same
+                self.end_line = self.start_line
+                self.end_column = self.start_column
+        else:
+            self._path_only = self.value
+
+    @property
+    def path(self) -> str:
+        """Return path without line range."""
+        return self._path_only
+
+    @property
+    def line_range_str(self) -> Optional[str]:
+        """Return formatted line/character range string, or None if no range."""
+        if self.start_line is None:
+            return None
+
+        # Build start position
+        if self.start_column is not None:
+            start = f":{self.start_line}:{self.start_column}"
+        else:
+            start = f":{self.start_line}"
+
+        # Check if end is the same as start (single position)
+        if self.start_line == self.end_line and self.start_column == self.end_column:
+            return start
+
+        # Build end position
+        if self.end_column is not None:
+            end = f"-{self.end_line}:{self.end_column}"
+        else:
+            end = f"-{self.end_line}"
+
+        return f"{start}{end}"
 
     def resolve(self, base_path: Optional[Path] = None) -> Path:
         """Resolve to a file path (relative paths resolved against base_path)."""
         if self.is_uri:
-            parsed = urlparse(self.value)
+            parsed = urlparse(self._path_only)
             if parsed.scheme == "file":
                 # file:// URI
                 return Path(parsed.path)
             raise ValueError(f"Cannot resolve non-file URI to path: {self.value}")
 
-        path = Path(self.value)
+        path = Path(self._path_only)
         if path.is_absolute():
             return path
         if base_path:
@@ -121,6 +185,7 @@ class Record:
     """A MarkBack record containing content and feedback."""
     feedback: str
     uri: Optional[str] = None
+    by: Optional[str] = None
     source: Optional[SourceRef] = None
     prior: Optional[SourceRef] = None
     content: Optional[str] = None
@@ -154,6 +219,7 @@ class Record:
         """Convert to JSON-serializable dict."""
         return {
             "uri": self.uri,
+            "by": self.by,
             "source": str(self.source) if self.source else None,
             "prior": str(self.prior) if self.prior else None,
             "content": self.content,

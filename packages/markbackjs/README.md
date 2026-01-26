@@ -21,6 +21,12 @@ if (result.hasErrors) {
 }
 ```
 
+### Supported Headers
+
+- `@uri` - Unique identifier for the record
+- `@source` - Reference to external content file
+- `@prior` - Reference to a file that precedes the source (e.g., a prompt that generated it)
+
 ## API
 
 - `lintString(text, options)`

@@ -111,6 +111,98 @@ function lintSourceExists(record: MarkbackRecord, basePath: string | null, recor
   return diagnostics;
 }
 
+function lintPriorExists(record: MarkbackRecord, basePath: string | null, recordIdx: number): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+
+  if (record.prior && !record.prior.isUri) {
+    try {
+      const resolved = record.prior.resolve(basePath);
+      if (!fs.existsSync(resolved)) {
+        diagnostics.push(
+          new Diagnostic({
+            file: record._sourceFile ?? null,
+            line: record._startLine ?? null,
+            column: null,
+            severity: Severity.WARNING,
+            code: WarningCode.W009,
+            message: `@prior file not found: ${record.prior}`,
+            recordIndex: recordIdx,
+          }),
+        );
+      }
+    } catch (_err) {
+      // Ignore URIs that cannot be resolved to paths.
+    }
+  }
+
+  return diagnostics;
+}
+
+interface PositionCheck {
+  isInvalid: boolean;
+  errorMsg: string;
+}
+
+function isPositionInvalid(sourceRef: { startLine: number | null; endLine: number | null; startColumn: number | null; endColumn: number | null }): PositionCheck {
+  if (sourceRef.startLine === null || sourceRef.endLine === null) {
+    return { isInvalid: false, errorMsg: "" };
+  }
+
+  if (sourceRef.endLine < sourceRef.startLine) {
+    return { isInvalid: true, errorMsg: `end line ${sourceRef.endLine} is less than start line ${sourceRef.startLine}` };
+  }
+
+  if (sourceRef.endLine === sourceRef.startLine) {
+    if (sourceRef.startColumn !== null && sourceRef.endColumn !== null && sourceRef.endColumn < sourceRef.startColumn) {
+      return { isInvalid: true, errorMsg: `end column ${sourceRef.endColumn} is less than start column ${sourceRef.startColumn} on line ${sourceRef.startLine}` };
+    }
+  }
+
+  return { isInvalid: false, errorMsg: "" };
+}
+
+function lintLineRange(record: MarkbackRecord, recordIdx: number): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+
+  // Check @source range
+  if (record.source && record.source.startLine !== null) {
+    const { isInvalid, errorMsg } = isPositionInvalid(record.source);
+    if (isInvalid) {
+      diagnostics.push(
+        new Diagnostic({
+          file: record._sourceFile ?? null,
+          line: record._startLine ?? null,
+          column: null,
+          severity: Severity.ERROR,
+          code: ErrorCode.E011,
+          message: `Invalid range in @source: ${errorMsg}`,
+          recordIndex: recordIdx,
+        }),
+      );
+    }
+  }
+
+  // Check @prior range
+  if (record.prior && record.prior.startLine !== null) {
+    const { isInvalid, errorMsg } = isPositionInvalid(record.prior);
+    if (isInvalid) {
+      diagnostics.push(
+        new Diagnostic({
+          file: record._sourceFile ?? null,
+          line: record._startLine ?? null,
+          column: null,
+          severity: Severity.ERROR,
+          code: ErrorCode.E011,
+          message: `Invalid range in @prior: ${errorMsg}`,
+          recordIndex: recordIdx,
+        }),
+      );
+    }
+  }
+
+  return diagnostics;
+}
+
 function lintCanonicalFormat(records: MarkbackRecord[], originalText: string, file?: string | null): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
 
@@ -170,7 +262,11 @@ export function lintString(text: string, options: LintOptions = {}): ParseResult
     if (checkSources) {
       const basePath = sourceFile ? path.dirname(sourceFile) : null;
       result.diagnostics.push(...lintSourceExists(record, basePath, idx));
+      result.diagnostics.push(...lintPriorExists(record, basePath, idx));
     }
+
+    // Check line range validity
+    result.diagnostics.push(...lintLineRange(record, idx));
   });
 
   if (checkCanonical && result.records.length > 0 && !result.hasErrors) {

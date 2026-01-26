@@ -20,6 +20,9 @@ export function writeRecordCanonical(record: Record, preferCompact = true): stri
     if (record.uri) {
       lines.push(`@uri ${record.uri}`);
     }
+    if (record.by) {
+      lines.push(`@by ${record.by}`);
+    }
     if (record.prior) {
       lines.push(`@prior ${record.prior}`);
     }
@@ -27,6 +30,9 @@ export function writeRecordCanonical(record: Record, preferCompact = true): stri
   } else {
     if (record.uri) {
       lines.push(`@uri ${record.uri}`);
+    }
+    if (record.by) {
+      lines.push(`@by ${record.by}`);
     }
     if (record.prior) {
       lines.push(`@prior ${record.prior}`);

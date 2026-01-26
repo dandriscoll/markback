@@ -17,7 +17,7 @@ from .types import (
 
 
 # Known header keywords
-KNOWN_HEADERS = {"uri", "source", "prior"}
+KNOWN_HEADERS = {"uri", "by", "source", "prior"}
 
 # Patterns
 HEADER_PATTERN = re.compile(r"^@([a-z]+)\s+(.+)$")
@@ -145,6 +145,7 @@ def parse_string(
         nonlocal pending_uri, in_content, had_blank_line
 
         uri = current_headers.get("uri") or pending_uri
+        by = current_headers.get("by")
         source_str = current_headers.get("source")
         source = SourceRef(source_str) if source_str else None
         prior_str = current_headers.get("prior")
@@ -164,6 +165,7 @@ def parse_string(
         record = Record(
             feedback=feedback,
             uri=uri,
+            by=by,
             source=source,
             prior=prior,
             content=content,
@@ -242,14 +244,16 @@ def parse_string(
                     line_num,
                 )
 
-            # Use any pending @uri from previous line and @prior if present
+            # Use any pending @uri from previous line and @by, @prior if present
             uri = pending_uri or current_headers.get("uri")
+            by = current_headers.get("by")
             prior_str = current_headers.get("prior")
             prior = SourceRef(prior_str) if prior_str else None
 
             record = Record(
                 feedback=feedback or "",
                 uri=uri,
+                by=by,
                 source=source,
                 prior=prior,
                 content=None,

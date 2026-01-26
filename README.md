@@ -161,6 +161,16 @@ Second content.
 @source ./images/003.jpg <<< approved; scene=mountain
 ```
 
+### With Prior Reference
+
+Use `@prior` to reference an item that precedes the source (e.g., a prompt that generated an image):
+
+```
+@uri local:generated-001
+@prior ./prompts/sunset-prompt.txt
+@source ./images/generated-sunset.jpg <<< accurate; matches prompt well
+```
+
 ### Paired Files
 
 **content.txt:**
