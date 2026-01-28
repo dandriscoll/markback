@@ -49,6 +49,7 @@ dev = [
 
 [project.scripts]
 markback = "markback.cli:app"
+mb = "markback.cli:app"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

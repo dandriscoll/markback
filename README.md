@@ -60,10 +60,17 @@ if result.has_errors:
 
 ## CLI Usage
 
+The CLI is available via two commands:
+- `markback` - Full command name
+- `mb` - Convenient shorthand (works on all platforms including Windows)
+
+Both commands are functionally identical. Examples below use `markback`, but you can substitute `mb` anywhere.
+
 ### Initialize configuration
 
 ```bash
 markback init
+# or: mb init
 ```
 
 Creates a `.env` file with all configuration options.
