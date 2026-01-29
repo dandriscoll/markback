@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "markback"
-version = "0.1.3"
+version = "0.1.4"
 description = "A compact, human-writable format for storing content paired with feedback/labels"
 readme = "README.md"
 license = "MIT"
@@ -48,8 +48,8 @@ dev = [
 ]
 
 [project.scripts]
-markback = "markback.cli:app"
-mb = "markback.cli:app"
+markback = "markback.cli:cli"
+mb = "markback.cli:cli"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
