@@ -2,6 +2,7 @@
 title: "MarkBack"
 summary: "Human-writable format for pairing content with labels and feedback."
 shipped: 2026-01-04
+theme: forest
 tags: [data-annotation, machine-learning, cli, python, typescript]
 links:
   - label: "markback.org"
