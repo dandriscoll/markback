@@ -14,14 +14,136 @@ runner = CliRunner()
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
-class TestInitCommand:
-    """Tests for the init command."""
+class TestAnnotation:
+    """Tests for the default annotation mode."""
+
+    def test_single_file_with_feedback(self):
+        """Test adding feedback to a single file."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "test.txt"
+            target.write_text("hello world")
+
+            result = runner.invoke(app, [str(target), "good; clear writing"])
+
+            assert result.exit_code == 0
+            mb_path = target.with_suffix(".txt.mb")
+            assert mb_path.exists()
+            content = mb_path.read_text()
+            assert "good; clear writing" in content
+            assert "hello world" in content  # inline content included
+
+    def test_single_file_with_prior(self):
+        """Test adding feedback with --prior option."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "output.txt"
+            target.write_text("generated output")
+            prior = Path(tmpdir) / "prompt.txt"
+            prior.write_text("the prompt")
+
+            result = runner.invoke(app, [str(target), "accurate", "--prior", str(prior)])
+
+            assert result.exit_code == 0
+            mb_path = target.with_suffix(".txt.mb")
+            assert mb_path.exists()
+            content = mb_path.read_text()
+            assert "accurate" in content
+            assert "@prior" in content
+
+    def test_single_file_appends(self):
+        """Test that feedback is appended to existing .mb file."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "test.txt"
+            target.write_text("hello")
+
+            runner.invoke(app, [str(target), "good"])
+            result = runner.invoke(app, [str(target), "great"])
+
+            assert result.exit_code == 0
+            mb_path = target.with_suffix(".txt.mb")
+            content = mb_path.read_text()
+            assert "good" in content
+            assert "great" in content
+
+    def test_glob_with_feedback(self):
+        """Test glob pattern with inline feedback."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for name in ["a.txt", "b.txt", "c.txt"]:
+                (Path(tmpdir) / name).write_text(f"content of {name}")
+
+            pattern = str(Path(tmpdir) / "*.txt")
+            result = runner.invoke(app, [pattern, "-f", "approved"])
+
+            assert result.exit_code == 0
+            fb_path = Path(tmpdir) / "feedback.mb"
+            assert fb_path.exists()
+            content = fb_path.read_text()
+            assert "approved" in content
+
+    def test_multi_files_with_feedback(self):
+        """Test shell-expanded multiple files with feedback."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            files = []
+            for name in ["a.txt", "b.txt", "c.txt"]:
+                p = Path(tmpdir) / name
+                p.write_text(f"content of {name}")
+                files.append(str(p))
+
+            result = runner.invoke(app, files + ["-f", "approved"])
+
+            assert result.exit_code == 0
+            fb_path = Path(tmpdir) / "feedback.mb"
+            assert fb_path.exists()
+            content = fb_path.read_text()
+            assert "approved" in content
+
+    def test_multi_files_with_prior(self):
+        """Test shell-expanded files with --prior."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prior = Path(tmpdir) / "prompt.txt"
+            prior.write_text("the prompt")
+            files = []
+            for name in ["a.txt", "b.txt"]:
+                p = Path(tmpdir) / name
+                p.write_text(f"content of {name}")
+                files.append(str(p))
+
+            result = runner.invoke(app, ["--prior", str(prior)] + files + ["-f", "good"])
+
+            assert result.exit_code == 0
+            fb_path = Path(tmpdir) / "feedback.mb"
+            assert fb_path.exists()
+            content = fb_path.read_text()
+            assert "good" in content
+            assert "@prior" in content
+
+    def test_glob_interactive_mode(self):
+        """Test glob interactive mode with mocked stdin."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "a.txt").write_text("file a")
+            (Path(tmpdir) / "b.txt").write_text("file b")
+
+            pattern = str(Path(tmpdir) / "*.txt")
+            result = runner.invoke(app, [pattern], input="good\n\n")
+
+            assert result.exit_code == 0
+            fb_path = Path(tmpdir) / "feedback.mb"
+            assert fb_path.exists()
+            content = fb_path.read_text()
+            assert "good" in content
+
+    def test_glob_no_matches(self):
+        """Test glob with no matches."""
+        result = runner.invoke(app, ["/nonexistent/path/*.xyz", "-f", "feedback"])
+        assert result.exit_code == 1
+
+
+class TestInit:
+    """Tests for --init."""
 
     def test_init_creates_env(self):
-        """Test that init creates a .env file."""
         with tempfile.TemporaryDirectory() as tmpdir:
             env_path = Path(tmpdir) / ".env"
-            result = runner.invoke(app, ["init", str(env_path)])
+            result = runner.invoke(app, ["--init", str(env_path)])
 
             assert result.exit_code == 0
             assert env_path.exists()
@@ -30,87 +152,69 @@ class TestInitCommand:
             assert "EDITOR_API_BASE" in content
 
     def test_init_no_overwrite(self):
-        """Test that init doesn't overwrite existing file."""
         with tempfile.TemporaryDirectory() as tmpdir:
             env_path = Path(tmpdir) / ".env"
             env_path.write_text("existing content")
 
-            result = runner.invoke(app, ["init", str(env_path)])
+            result = runner.invoke(app, ["--init", str(env_path)])
 
             assert result.exit_code == 1
             assert env_path.read_text() == "existing content"
 
     def test_init_force_overwrite(self):
-        """Test that init --force overwrites existing file."""
         with tempfile.TemporaryDirectory() as tmpdir:
             env_path = Path(tmpdir) / ".env"
             env_path.write_text("existing content")
 
-            result = runner.invoke(app, ["init", str(env_path), "--force"])
+            result = runner.invoke(app, ["--init", "--force", str(env_path)])
 
             assert result.exit_code == 0
             assert "FILE_MODE" in env_path.read_text()
 
 
-class TestLintCommand:
-    """Tests for the lint command."""
+class TestLint:
+    """Tests for --lint."""
 
     def test_lint_valid_file(self):
-        """Test linting a valid file."""
-        result = runner.invoke(app, ["lint", str(FIXTURES_DIR / "minimal.mb"), "--no-source-check"])
-
-        # May have warnings but should not fail
+        result = runner.invoke(app, ["--lint", "--no-source-check", str(FIXTURES_DIR / "minimal.mb")])
         assert "Records:" in result.output
 
     def test_lint_error_file(self):
-        """Test linting a file with errors."""
-        result = runner.invoke(app, ["lint", str(FIXTURES_DIR / "errors" / "missing_feedback.mb")])
-
+        result = runner.invoke(app, ["--lint", str(FIXTURES_DIR / "errors" / "missing_feedback.mb")])
         assert result.exit_code == 1
         assert "E001" in result.output
 
     def test_lint_json_output(self):
-        """Test lint with JSON output."""
         result = runner.invoke(app, [
-            "lint",
+            "--lint", "--json", "--no-source-check",
             str(FIXTURES_DIR / "minimal.mb"),
-            "--json",
-            "--no-source-check",
         ])
-
         data = json.loads(result.output)
         assert "summary" in data
         assert "diagnostics" in data
 
     def test_lint_directory(self):
-        """Test linting a directory."""
-        result = runner.invoke(app, ["lint", str(FIXTURES_DIR), "--no-source-check"])
-
+        result = runner.invoke(app, ["--lint", "--no-source-check", str(FIXTURES_DIR)])
         assert "Files:" in result.output
 
 
-class TestNormalizeCommand:
-    """Tests for the normalize command."""
+class TestNormalize:
+    """Tests for --normalize."""
 
     def test_normalize_to_stdout(self):
-        """Test normalize outputs to stdout."""
-        result = runner.invoke(app, ["normalize", str(FIXTURES_DIR / "minimal.mb")])
-
+        result = runner.invoke(app, ["--normalize", str(FIXTURES_DIR / "minimal.mb")])
         assert result.exit_code == 0
         assert "<<< positive" in result.output
 
     def test_normalize_to_file(self):
-        """Test normalize writes to output file."""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.mb', delete=False) as f:
             output_path = Path(f.name)
 
         try:
             result = runner.invoke(app, [
-                "normalize",
+                "--normalize", "-o", str(output_path),
                 str(FIXTURES_DIR / "minimal.mb"),
-                str(output_path),
             ])
-
             assert result.exit_code == 0
             assert output_path.exists()
             assert "<<< positive" in output_path.read_text()
@@ -118,91 +222,60 @@ class TestNormalizeCommand:
             output_path.unlink()
 
 
-class TestListCommand:
-    """Tests for the list command."""
+class TestList:
+    """Tests for --list."""
 
     def test_list_file(self):
-        """Test listing records in a file."""
-        result = runner.invoke(app, ["list", str(FIXTURES_DIR / "multi_record.mb")])
-
+        result = runner.invoke(app, ["--list", str(FIXTURES_DIR / "multi_record.mb")])
         assert result.exit_code == 0
         assert "Total:" in result.output
 
     def test_list_json(self):
-        """Test list with JSON output."""
-        result = runner.invoke(app, ["list", str(FIXTURES_DIR / "minimal.mb"), "--json"])
-
+        result = runner.invoke(app, ["--list", "--json", str(FIXTURES_DIR / "minimal.mb")])
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert isinstance(data, list)
 
 
-class TestConvertCommand:
-    """Tests for the convert command."""
+class TestConvert:
+    """Tests for --convert."""
 
     def test_convert_to_multi(self):
-        """Test converting to multi-record format."""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.mb', delete=False) as f:
             output_path = Path(f.name)
 
         try:
             result = runner.invoke(app, [
-                "convert",
+                "--convert", "--to", "multi", "-o", str(output_path),
                 str(FIXTURES_DIR / "minimal.mb"),
-                str(output_path),
-                "--to", "multi",
             ])
-
             assert result.exit_code == 0
             assert output_path.exists()
         finally:
             output_path.unlink()
 
     def test_convert_to_compact(self):
-        """Test converting to compact format."""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.mb', delete=False) as f:
             output_path = Path(f.name)
 
         try:
             result = runner.invoke(app, [
-                "convert",
+                "--convert", "--to", "compact", "-o", str(output_path),
                 str(FIXTURES_DIR / "label_list.mb"),
-                str(output_path),
-                "--to", "compact",
             ])
-
             assert result.exit_code == 0
         finally:
             output_path.unlink()
 
     def test_convert_to_paired(self):
-        """Test converting to paired format."""
         with tempfile.TemporaryDirectory() as tmpdir:
             output_dir = Path(tmpdir)
 
             result = runner.invoke(app, [
-                "convert",
+                "--convert", "--to", "paired", "-o", str(output_dir),
                 str(FIXTURES_DIR / "label_list.mb"),
-                str(output_dir),
-                "--to", "paired",
             ])
 
             assert result.exit_code == 0
             label_files = list(output_dir.glob("*.label.txt"))
             assert len(label_files) > 0
-
-
-class TestWorkflowCommands:
-    """Tests for workflow subcommands."""
-
-    def test_workflow_evaluate_missing_file(self):
-        """Test evaluate with missing file."""
-        result = runner.invoke(app, ["workflow", "evaluate", "nonexistent.json"])
-
-        assert result.exit_code == 1
-
-    def test_workflow_prompt_missing_file(self):
-        """Test prompt with missing file."""
-        result = runner.invoke(app, ["workflow", "prompt", "nonexistent.json"])
-
-        assert result.exit_code == 1

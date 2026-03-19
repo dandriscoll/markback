@@ -64,74 +64,67 @@ The CLI is available via two commands:
 - `markback` - Full command name
 - `mb` - Convenient shorthand (works on all platforms including Windows)
 
-Both commands are functionally identical. Examples below use `markback`, but you can substitute `mb` anywhere.
+Both commands are functionally identical. Examples below use `mb`, but you can substitute `markback` anywhere.
 
-### Initialize configuration
+### Annotate files
+
+The primary use of `mb` is entering feedback. Files are positional arguments.
 
 ```bash
-markback init
-# or: mb init
+# Single file — inline feedback, appends to myfile.txt.mb
+mb myfile.txt "good; clear writing"
+
+# Single file with prior reference
+mb myfile.txt "good" --prior prompt.txt
+
+# Multiple files — same feedback for all, creates feedback.mb
+mb *.jpg -f "approved"
+mb *.jpg -f "approved" --prior prompt.txt
+
+# Interactive mode (no -f), steps through each file
+mb *.jpg
+mb *.jpg --print              # print file contents before prompting
+mb *.jpg --prior prompt.txt   # set @prior on all records
 ```
 
-Creates a `.env` file with all configuration options.
+Interactive mode steps through each matched file and prompts for feedback:
 
-### Lint files
-
-```bash
-# Lint a single file
-markback lint myfile.mb
-
-# Lint a directory
-markback lint ./data/
-
-# JSON output
-markback lint myfile.mb --json
+```
+[1/24] ./images/001.jpg
+Feedback: approved; scene=beach
+[2/24] ./images/002.jpg
+Feedback:                          ← empty enter skips this file
+[3/24] ./images/003.jpg
+Feedback: rejected; too dark
+Wrote 2 record(s) to ./images/feedback.mb
 ```
 
-### Normalize to canonical format
+### Utility options
 
 ```bash
-# Output to stdout
-markback normalize input.mb
+# Lint
+mb --lint myfile.mb
+mb --lint ./data/
+mb --lint --json myfile.mb
+mb --lint --no-source-check --no-canonical-check myfile.mb
 
-# Output to file
-markback normalize input.mb output.mb
+# List records
+mb --list myfile.mb
+mb --list --json ./data/
 
-# In-place normalization
-markback normalize input.mb --in-place
-```
+# Normalize to canonical format
+mb --normalize input.mb                      # stdout
+mb --normalize -o output.mb input.mb         # to file
+mb --normalize --in-place input.mb           # in place
 
-### List records
+# Convert between formats
+mb --convert --to multi -o output.mb input.mb
+mb --convert --to compact -o output.mb input.mb
+mb --convert --to paired -o ./output_dir/ input.mb
 
-```bash
-markback list myfile.mb
-markback list ./data/ --json
-```
-
-### Convert between formats
-
-```bash
-# Convert to multi-record format
-markback convert input.mb output.mb --to multi
-
-# Convert to compact label list
-markback convert input.mb output.mb --to compact
-
-# Convert to paired files
-markback convert input.mb ./output_dir/ --to paired
-```
-
-### Run LLM workflow
-
-```bash
-# Run editor/operator workflow
-markback workflow run dataset.mb --prompt "Initial prompt" --output results.json
-
-# View evaluation results
-markback workflow evaluate results.json
-
-# Extract refined prompt
-markback workflow prompt results.json --output refined_prompt.txt
+# Initialize config
+mb --init                    # create .env
+mb --init --force            # overwrite existing
 ```
 
 ## File Formats
