@@ -67,6 +67,10 @@ The CLI is available via `markback` or `mb` (shorthand).
 # Single file — inline feedback, appends to myfile.txt.mb
 mb myfile.txt "good; clear writing"
 
+# URL target — derives sidecar from last path segment (or hostname)
+mb https://example.com/blog/post.html "great explanation"
+# → writes post.html.mb with @file https://example.com/blog/post.html
+
 # With input reference (what produced the file)
 mb output.txt "accurate" --input prompt.txt
 
@@ -107,9 +111,6 @@ mb --convert --to compact -o output.mb input.mb
 # Upgrade V1 files to V2
 mb --upgrade *.mb              # preview
 mb --upgrade --apply --in-place *.mb  # apply
-
-# Initialize config
-mb --init
 ```
 
 ## File Format

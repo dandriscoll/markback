@@ -3,16 +3,17 @@
 import glob as glob_module
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 import typer
 from rich.console import Console
 
-from .config import init_env
 from .linter import format_diagnostics, lint_file, lint_files, summarize_results
 from .parser import parse_directory, parse_file
 from .types import FileRef, Record
@@ -66,9 +67,31 @@ def open_editor(path: Path) -> None:
         raise typer.Exit(1)
 
 
+def _is_url(target: str) -> bool:
+    """Check if target is an http(s) URL."""
+    return urlparse(target).scheme in ("http", "https")
+
+
 def _is_glob(target: str) -> bool:
     """Check if target contains glob characters."""
+    if _is_url(target):
+        return False
     return any(c in target for c in ('*', '?', '['))
+
+
+_UNSAFE_FS_CHARS = re.compile(r'[\x00-\x1f<>:"/\\|?*]')
+
+
+def url_to_mb_path(url: str) -> Path:
+    """Derive a sidecar .mb path from a URL.
+
+    Picks the last non-empty path segment, falling back to the hostname.
+    """
+    parsed = urlparse(url)
+    segments = [s for s in parsed.path.split("/") if s]
+    name = segments[-1] if segments else (parsed.hostname or "url")
+    name = _UNSAFE_FS_CHARS.sub("_", name).strip(". ") or (parsed.hostname or "url")
+    return Path(f"{name}.mb")
 
 
 def _is_text_file(path: Path) -> bool:
@@ -216,18 +239,6 @@ def _do_convert(targets: list[str], output: Optional[str], to_format: str):
     err_console.print(f"Converted {len(result.records)} record(s) to {to_format} format")
 
 
-def _do_init(targets: list[str], force: bool):
-    """Initialize a .env config file."""
-    env_path = Path(targets[0]) if targets else Path(".env")
-
-    created = init_env(env_path, force=force)
-    if created:
-        typer.echo(f"Created {env_path}")
-    else:
-        err_console.print(f"[red]{env_path} already exists. Use --force to overwrite.[/red]")
-        raise typer.Exit(1)
-
-
 def _do_upgrade(targets: list[str], dry_run: bool):
     """Upgrade V1 files to V2 format."""
     if not targets:
@@ -327,21 +338,27 @@ def _add_single(
     by: Optional[str],
 ) -> None:
     """Handle single-file feedback entry."""
-    target_path = Path(target)
-    mb_path = get_mb_path(target_path)
+    is_url = _is_url(target)
+    if is_url:
+        mb_path = url_to_mb_path(target)
+        target_path = None
+    else:
+        target_path = Path(target)
+        mb_path = get_mb_path(target_path)
+
+    file_ref = FileRef(target)
 
     if feedback is None:
         if not mb_path.exists():
-            if not target_path.exists():
+            if not is_url and not target_path.exists():
                 err_console.print(f"[red]Target file not found: {target}[/red]")
                 raise typer.Exit(1)
-            record = Record(file=FileRef(target), feedback="")
-            write_file(mb_path, [record])
+            write_file(mb_path, [Record(file=file_ref, feedback="")])
         open_editor(mb_path)
     else:
-        content = _read_inline_content(target_path)
+        content = None if is_url else _read_inline_content(target_path)
         new_record = Record(
-            file=FileRef(target),
+            file=file_ref,
             feedback=feedback,
             input=input_ref,
             tags=tags,
@@ -441,7 +458,6 @@ def main(
     do_list: bool = typer.Option(False, "--list", help="List records in the target file(s)"),
     do_normalize: bool = typer.Option(False, "--normalize", help="Normalize a file to canonical format"),
     do_convert: bool = typer.Option(False, "--convert", help="Convert a file to a different format"),
-    do_init: bool = typer.Option(False, "--init", help="Initialize a .env config file"),
     do_upgrade: bool = typer.Option(False, "--upgrade", help="Upgrade V1 files to V2 format"),
     do_stats: bool = typer.Option(False, "--stats", help="Show statistics for MarkBack files"),
     # Utility options
@@ -460,9 +476,6 @@ def main(
     files = targets or []
 
     # Dispatch utility modes
-    if do_init:
-        _do_init(files, force)
-        return
     if do_lint:
         _do_lint(files, json_output, no_source_check, no_canonical_check)
         return

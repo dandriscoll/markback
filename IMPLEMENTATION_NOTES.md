@@ -17,7 +17,7 @@
 ### Removed
 - LLM workflow layer (`llm.py`, `workflow.py`) — not core to MarkBack
 - `httpx` dependency
-- `LLMConfig` from config
+- `config.py` / `python-dotenv` dependency / `--init` command — not core to MarkBack
 - RFC 3986 URI validation on `@id`
 - E003 (malformed URI) no longer emitted
 - E005 (content with @source) no longer emitted — coexistence is valid

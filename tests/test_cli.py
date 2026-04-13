@@ -124,35 +124,55 @@ class TestAnnotation:
         assert result.exit_code == 1
 
 
-class TestInit:
-    """Tests for --init."""
+class TestUrlTarget:
+    """Tests for URL targets."""
 
-    def test_init_creates_env(self):
+    def test_url_with_path_segment(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            env_path = Path(tmpdir) / ".env"
-            result = runner.invoke(app, ["--init", str(env_path)])
-            assert result.exit_code == 0
-            assert env_path.exists()
-            content = env_path.read_text()
-            assert "FILE_MODE" in content
-            # V2: no LLM config
-            assert "EDITOR_API_BASE" not in content
+            with runner.isolated_filesystem(temp_dir=tmpdir):
+                result = runner.invoke(
+                    app,
+                    ["https://example.com/blog/post.html", "great explanation"],
+                )
+                assert result.exit_code == 0
+                mb_path = Path("post.html.mb")
+                assert mb_path.exists()
+                content = mb_path.read_text()
+                assert "@file https://example.com/blog/post.html" in content
+                assert "great explanation" in content
 
-    def test_init_no_overwrite(self):
+    def test_url_bare_hostname(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            env_path = Path(tmpdir) / ".env"
-            env_path.write_text("existing content")
-            result = runner.invoke(app, ["--init", str(env_path)])
-            assert result.exit_code == 1
-            assert env_path.read_text() == "existing content"
+            with runner.isolated_filesystem(temp_dir=tmpdir):
+                result = runner.invoke(app, ["https://example.com", "ok"])
+                assert result.exit_code == 0
+                assert Path("example.com.mb").exists()
 
-    def test_init_force_overwrite(self):
+    def test_url_trailing_slash_uses_last_segment(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            env_path = Path(tmpdir) / ".env"
-            env_path.write_text("existing content")
-            result = runner.invoke(app, ["--init", "--force", str(env_path)])
-            assert result.exit_code == 0
-            assert "FILE_MODE" in env_path.read_text()
+            with runner.isolated_filesystem(temp_dir=tmpdir):
+                result = runner.invoke(app, ["https://example.com/blog/", "ok"])
+                assert result.exit_code == 0
+                assert Path("blog.mb").exists()
+
+    def test_url_with_query_string(self):
+        """Query strings shouldn't be treated as glob patterns."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with runner.isolated_filesystem(temp_dir=tmpdir):
+                result = runner.invoke(
+                    app, ["https://example.com/page?id=1", "ok"]
+                )
+                assert result.exit_code == 0
+                assert Path("page.mb").exists()
+
+    def test_url_appends_to_existing_mb(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with runner.isolated_filesystem(temp_dir=tmpdir):
+                runner.invoke(app, ["https://example.com/post.html", "first"])
+                runner.invoke(app, ["https://example.com/post.html", "second"])
+                content = Path("post.html.mb").read_text()
+                assert "first" in content
+                assert "second" in content
 
 
 class TestLint:

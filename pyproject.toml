@@ -29,7 +29,6 @@ keywords = ["labeling", "feedback", "llm", "annotation", "markdown", "data-label
 dependencies = [
     "typer>=0.9.0",
     "rich>=13.0.0",
-    "python-dotenv>=1.0.0",
 ]
 
 [project.urls]

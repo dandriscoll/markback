@@ -40,11 +40,6 @@ from .linter import (
     format_diagnostics,
     summarize_results,
 )
-from .config import (
-    Config,
-    load_config,
-    init_env,
-)
 
 __version__ = "0.2.0"
 
@@ -87,10 +82,6 @@ __all__ = [
     "lint_string",
     "format_diagnostics",
     "summarize_results",
-    # Config
-    "Config",
-    "load_config",
-    "init_env",
     # Version
     "__version__",
 ]
