@@ -18,6 +18,7 @@ export enum ErrorCode {
   E009 = "E009",
   E010 = "E010",
   E011 = "E011",
+  E012 = "E012",
 }
 
 export enum WarningCode {
@@ -221,6 +222,7 @@ export interface RecordInit {
   file?: FileRef | null;
   input?: FileRef | null;
   tags?: string[];
+  excerpt?: string | null;
   content?: string | null;
   metadata?: UnknownMap;
   _sourceFile?: string | null;
@@ -235,6 +237,7 @@ export class Record {
   file: FileRef | null;
   input: FileRef | null;
   tags: string[];
+  excerpt: string | null;
   content: string | null;
   metadata: UnknownMap;
   _sourceFile: string | null;
@@ -248,6 +251,7 @@ export class Record {
     this.file = init.file ?? null;
     this.input = init.input ?? null;
     this.tags = init.tags ?? [];
+    this.excerpt = init.excerpt ?? null;
     this.content = init.content ?? null;
     this.metadata = init.metadata ?? {};
     this._sourceFile = init._sourceFile ?? null;
@@ -281,6 +285,7 @@ export class Record {
       file: this.file ? this.file.toString() : null,
       input: this.input ? this.input.toString() : null,
       tags: this.tags,
+      excerpt: this.excerpt,
       content: this.content,
       feedback: this.feedback,
       metadata: this.metadata,

@@ -16,7 +16,9 @@ from .types import (
 
 
 # V2 known header keywords
-KNOWN_HEADERS = {"id", "by", "file", "input", "tag"}
+KNOWN_HEADERS = {"id", "by", "file", "input", "tag", "excerpt"}
+
+EXCERPT_FENCE = '"""'
 
 # V1 header mapping for backward compatibility
 V1_HEADER_MAP = {"uri": "id", "source": "file", "prior": "input"}
@@ -159,6 +161,7 @@ def parse_string(
         input_ref = FileRef(input_str) if input_str else None
         tag_str = current_headers.get("tag")
         tags = tag_str.split() if tag_str else []
+        excerpt = current_headers.get("excerpt")
 
         content = None
         if current_content_lines:
@@ -177,6 +180,7 @@ def parse_string(
             file=file_ref,
             input=input_ref,
             tags=tags,
+            excerpt=excerpt,
             content=content,
             _source_file=source_file,
             _start_line=current_start_line,
@@ -304,6 +308,7 @@ def parse_string(
             input_ref = FileRef(input_str) if input_str else None
             tag_str = current_headers.get("tag")
             tags = tag_str.split() if tag_str else []
+            excerpt = current_headers.get("excerpt")
 
             record = Record(
                 feedback=feedback or "",
@@ -312,6 +317,7 @@ def parse_string(
                 file=file_ref,
                 input=input_ref,
                 tags=tags,
+                excerpt=excerpt,
                 content=None,
                 _source_file=source_file,
                 _start_line=current_start_line,
@@ -368,6 +374,25 @@ def parse_string(
             # Merge tags if multiple @tag lines
             if keyword == "tag" and "tag" in current_headers:
                 current_headers["tag"] = current_headers["tag"] + " " + value
+            elif keyword == "excerpt" and value.rstrip() == EXCERPT_FENCE:
+                # Multi-line excerpt: consume until closing """
+                excerpt_lines: list[str] = []
+                closed = False
+                while line_num < len(lines):
+                    next_line = lines[line_num]
+                    line_num += 1
+                    if next_line.rstrip() == EXCERPT_FENCE:
+                        closed = True
+                        break
+                    excerpt_lines.append(next_line)
+                if not closed:
+                    add_diagnostic(
+                        Severity.ERROR,
+                        ErrorCode.E012,
+                        'Unclosed @excerpt """ block',
+                        line_num,
+                    )
+                current_headers["excerpt"] = '\n'.join(excerpt_lines)
             else:
                 current_headers[keyword] = value
             continue

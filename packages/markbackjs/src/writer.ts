@@ -11,6 +11,13 @@ function normalizeContentLines(content: string): string[] {
   return lines;
 }
 
+function emitExcerpt(excerpt: string): string[] {
+  if (excerpt.includes("\n")) {
+    return ['@excerpt """', ...excerpt.split("\n"), '"""'];
+  }
+  return [`@excerpt ${excerpt}`];
+}
+
 export function writeRecordCanonical(record: Record, preferCompact = true): string {
   const lines: string[] = [];
 
@@ -29,6 +36,9 @@ export function writeRecordCanonical(record: Record, preferCompact = true): stri
     if (record.input) {
       lines.push(`@input ${record.input}`);
     }
+    if (record.excerpt !== null) {
+      lines.push(...emitExcerpt(record.excerpt));
+    }
     lines.push(`@file ${record.file} <<< ${record.feedback}`);
   } else {
     if (record.id) {
@@ -42,6 +52,9 @@ export function writeRecordCanonical(record: Record, preferCompact = true): stri
     }
     if (record.input) {
       lines.push(`@input ${record.input}`);
+    }
+    if (record.excerpt !== null) {
+      lines.push(...emitExcerpt(record.excerpt));
     }
     if (record.file) {
       lines.push(`@file ${record.file}`);

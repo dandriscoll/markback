@@ -14,6 +14,13 @@ class OutputMode(Enum):
     COMPACT = "compact"
 
 
+def _emit_excerpt(excerpt: str) -> list[str]:
+    """Render an @excerpt header — single-line or triple-quoted block."""
+    if "\n" in excerpt:
+        return ['@excerpt """', *excerpt.split("\n"), '"""']
+    return [f"@excerpt {excerpt}"]
+
+
 def _write_record_canonical(
     record: Record,
     prefer_compact: bool = True,
@@ -37,6 +44,8 @@ def _write_record_canonical(
             lines.append(f"@tag {' '.join(record.tags)}")
         if record.input:
             lines.append(f"@input {record.input}")
+        if record.excerpt is not None:
+            lines.extend(_emit_excerpt(record.excerpt))
         lines.append(f"@file {record.file} <<< {record.feedback}")
     else:
         # Full format
@@ -48,6 +57,8 @@ def _write_record_canonical(
             lines.append(f"@tag {' '.join(record.tags)}")
         if record.input:
             lines.append(f"@input {record.input}")
+        if record.excerpt is not None:
+            lines.extend(_emit_excerpt(record.excerpt))
         if record.file:
             lines.append(f"@file {record.file}")
 
@@ -243,6 +254,8 @@ def write_label_file(record: Record) -> str:
         lines.append(f"@tag {' '.join(record.tags)}")
     if record.input:
         lines.append(f"@input {record.input}")
+    if record.excerpt is not None:
+        lines.extend(_emit_excerpt(record.excerpt))
     lines.append(f"<<< {record.feedback}")
     return '\n'.join(lines) + "\n"
 

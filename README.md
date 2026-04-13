@@ -71,6 +71,10 @@ mb myfile.txt "good; clear writing"
 mb https://example.com/blog/post.html "great explanation"
 # → writes post.html.mb with @file https://example.com/blog/post.html
 
+# Quote an excerpt of the source (handy when line numbers don't apply)
+mb https://example.com/post.html "awkward phrasing" \
+  --excerpt "the quick brown fox jumped over the lazy dog"
+
 # With input reference (what produced the file)
 mb output.txt "accurate" --input prompt.txt
 
@@ -123,6 +127,7 @@ mb --upgrade --apply --in-place *.mb  # apply
 | `@by` | Who provided feedback |
 | `@tag` | Space-separated tags |
 | `@input` | What produced the content (e.g., a prompt) |
+| `@excerpt` | Quoted passage from the source (single-line or `"""`-fenced) |
 | `@file` | Path to the content being annotated |
 
 ### File-level headers (% prefix)
