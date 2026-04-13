@@ -1,7 +1,6 @@
 import { Diagnostic, ErrorCode, FileRef, ParseResult, Record as MarkbackRecord, Severity, WarningCode } from "./types";
 
-const KNOWN_HEADERS = new Set(["id", "by", "file", "input", "tag", "excerpt"]);
-const EXCERPT_FENCE = '"""';
+const KNOWN_HEADERS = new Set(["id", "by", "file", "input", "tag"]);
 const V1_HEADER_MAP: { [key: string]: string } = { uri: "id", source: "file", prior: "input" };
 
 const HEADER_PATTERN = /^@([a-z]+)\s+(.+)$/;
@@ -135,7 +134,6 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
     const inputRef = inputStr ? new FileRef(inputStr) : null;
     const tagStr = currentHeaders.tag;
     const tags = tagStr ? tagStr.split(/\s+/) : [];
-    const excerpt = currentHeaders.excerpt ?? null;
 
     let content: string | null = null;
     if (currentContentLines.length > 0) {
@@ -157,7 +155,6 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
         file: fileRef,
         input: inputRef,
         tags,
-        excerpt,
         content,
         _sourceFile: sourceFile ?? null,
         _startLine: currentStartLine,
@@ -256,7 +253,6 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
       const inputRef = inputStr ? new FileRef(inputStr) : null;
       const tagStr = currentHeaders.tag;
       const tags = tagStr ? tagStr.split(/\s+/) : [];
-      const excerpt = currentHeaders.excerpt ?? null;
 
       records.push(
         new MarkbackRecord({
@@ -266,7 +262,6 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
           file: fileRef,
           input: inputRef,
           tags,
-          excerpt,
           content: null,
           _sourceFile: sourceFile ?? null,
           _startLine: currentStartLine,
@@ -314,23 +309,6 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
       // Merge tags
       if (keyword === "tag" && currentHeaders.tag && value) {
         currentHeaders.tag = currentHeaders.tag + " " + value;
-      } else if (keyword === "excerpt" && value && stripLine(value) === EXCERPT_FENCE) {
-        // Multi-line excerpt: consume until closing """
-        const excerptLines: string[] = [];
-        let closed = false;
-        while (lineNum < lines.length) {
-          const nextLine = lines[lineNum];
-          lineNum += 1;
-          if (stripLine(nextLine) === EXCERPT_FENCE) {
-            closed = true;
-            break;
-          }
-          excerptLines.push(nextLine);
-        }
-        if (!closed) {
-          addDiagnostic(Severity.ERROR, ErrorCode.E012, 'Unclosed @excerpt """ block', lineNum);
-        }
-        currentHeaders.excerpt = excerptLines.join("\n");
       } else if (keyword && value) {
         currentHeaders[keyword] = value;
       }

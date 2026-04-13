@@ -195,36 +195,6 @@ class TestUrlTarget:
                 assert "second" in content
 
 
-class TestExcerptCli:
-    """Tests for --excerpt flag."""
-
-    def test_excerpt_single_line(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with runner.isolated_filesystem(temp_dir=tmpdir):
-                result = runner.invoke(
-                    app,
-                    [
-                        "https://example.com/post.html",
-                        "lazy phrasing",
-                        "--excerpt",
-                        "the quick brown fox",
-                    ],
-                )
-                assert result.exit_code == 0
-                content = Path("post.html.mb").read_text()
-                assert "@excerpt the quick brown fox" in content
-
-    def test_excerpt_short_flag(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with runner.isolated_filesystem(temp_dir=tmpdir):
-                result = runner.invoke(
-                    app,
-                    ["https://example.com/x", "fb", "-e", "quoted text"],
-                )
-                assert result.exit_code == 0
-                assert "@excerpt quoted text" in Path("x.mb").read_text()
-
-
 class TestLint:
     """Tests for --lint."""
 

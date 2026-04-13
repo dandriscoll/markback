@@ -167,69 +167,6 @@ class TestParseString:
         assert result.records[0].by == "dan@example.com"
 
 
-class TestExcerptHeader:
-    """Tests for @excerpt header."""
-
-    def test_single_line_excerpt(self):
-        text = "@excerpt the quick brown fox\n@file ./foo.txt <<< awkward\n"
-        result = parse_string(text)
-        assert not result.has_errors
-        assert result.records[0].excerpt == "the quick brown fox"
-
-    def test_multi_line_excerpt(self):
-        text = (
-            '@excerpt """\n'
-            'line one\n'
-            'line two\n'
-            'line three\n'
-            '"""\n'
-            '@file ./foo.txt <<< unclear\n'
-        )
-        result = parse_string(text)
-        assert not result.has_errors
-        assert result.records[0].excerpt == "line one\nline two\nline three"
-
-    def test_excerpt_with_file_range(self):
-        text = "@excerpt the lazy dog\n@file ./foo.txt:5:10-5:30 <<< note\n"
-        result = parse_string(text)
-        assert not result.has_errors
-        record = result.records[0]
-        assert record.excerpt == "the lazy dog"
-        assert record.file.start_line == 5
-        assert record.file.start_column == 10
-
-    def test_unclosed_excerpt_block(self):
-        text = (
-            '@excerpt """\n'
-            'unterminated\n'
-            '@file ./foo.txt <<< note\n'
-        )
-        result = parse_string(text)
-        assert result.has_errors
-        assert any(d.code == ErrorCode.E012 for d in result.diagnostics)
-
-    def test_excerpt_in_full_record(self):
-        text = (
-            "@id item-1\n"
-            "@excerpt a phrase\n"
-            "@file ./foo.txt\n"
-            "\n"
-            "inline content\n"
-            "<<< feedback\n"
-        )
-        result = parse_string(text)
-        assert not result.has_errors
-        record = result.records[0]
-        assert record.excerpt == "a phrase"
-        assert record.content == "inline content"
-
-    def test_empty_excerpt_block(self):
-        text = '@excerpt """\n"""\n@file ./foo.txt <<< note\n'
-        result = parse_string(text)
-        assert not result.has_errors
-        assert result.records[0].excerpt == ""
-
-
 class TestFileLevelHeaders:
     """Tests for file-level % headers."""
 

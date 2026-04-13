@@ -27,7 +27,6 @@ class ErrorCode(Enum):
     E009 = "E009"  # Empty feedback (nothing after <<< )
     E010 = "E010"  # Missing blank line before inline content
     E011 = "E011"  # Invalid line range (end < start)
-    E012 = "E012"  # Unclosed @excerpt """ block
 
 
 class WarningCode(Enum):
@@ -190,7 +189,6 @@ class Record:
     file: Optional[FileRef] = None
     input: Optional[FileRef] = None
     tags: list[str] = field(default_factory=list)
-    excerpt: Optional[str] = None
     content: Optional[str] = None
     metadata: dict = field(default_factory=dict)
 
@@ -244,7 +242,6 @@ class Record:
             "file": str(self.file) if self.file else None,
             "input": str(self.input) if self.input else None,
             "tags": self.tags,
-            "excerpt": self.excerpt,
             "content": self.content,
             "feedback": self.feedback,
             "metadata": self.metadata,

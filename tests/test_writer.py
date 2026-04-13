@@ -84,59 +84,6 @@ class TestWriteRecordCanonical:
         assert "<<< good" in result
 
 
-class TestExcerptWriter:
-    """Tests for @excerpt header rendering."""
-
-    def test_single_line_excerpt_compact(self):
-        record = Record(
-            feedback="awkward",
-            file=FileRef("./foo.txt"),
-            excerpt="the quick brown fox",
-        )
-        result = write_record_canonical(record)
-        assert "@excerpt the quick brown fox" in result
-        assert "@file ./foo.txt <<< awkward" in result
-        # excerpt comes before @file
-        assert result.index("@excerpt") < result.index("@file")
-
-    def test_multi_line_excerpt_block(self):
-        record = Record(
-            feedback="unclear",
-            file=FileRef("./foo.txt"),
-            excerpt="line one\nline two",
-        )
-        result = write_record_canonical(record)
-        assert '@excerpt """' in result
-        assert "line one" in result
-        assert "line two" in result
-        # closing """ on its own line
-        assert result.endswith("<<< unclear")
-
-    def test_excerpt_with_inline_content(self):
-        record = Record(
-            feedback="note",
-            file=FileRef("./foo.txt"),
-            excerpt="quote",
-            content="full snapshot",
-        )
-        result = write_record_canonical(record)
-        assert "@excerpt quote" in result
-        assert "full snapshot" in result
-
-    def test_excerpt_roundtrip_multi_line(self):
-        from markback import parse_string, write_string
-        original = Record(
-            feedback="note",
-            id="r1",
-            file=FileRef("./foo.txt"),
-            excerpt="line one\nline two\nline three",
-        )
-        text = write_string([original])
-        result = parse_string(text)
-        assert not result.has_errors
-        assert result.records[0].excerpt == "line one\nline two\nline three"
-
-
 class TestWriteString:
     """Tests for write_string function."""
 

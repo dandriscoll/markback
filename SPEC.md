@@ -44,7 +44,6 @@ A MarkBack **record** is the fundamental unit. Every record has:
 | `by` | No | Freeform identifier for who provided the feedback |
 | `tags` | No | Space-separated tags for categorization |
 | `input` | No | Reference to an item that preceded the content (e.g., a prompt) |
-| `excerpt` | No | Quoted passage from the source (see 3.1.6) |
 | `file` | No | Reference to external content (provenance); can coexist with inline content |
 | `content` | No | Inline text content between headers and `<<<` |
 
@@ -95,7 +94,7 @@ Header lines appear at the start of a record and begin with `@`. They define met
 - Unknown headers SHOULD generate a warning (W002, forward compatibility)
 - Headers are case-sensitive (`@id` not `@ID`)
 
-**Canonical header order:** `@id`, `@by`, `@tag`, `@input`, `@excerpt`, `@file`
+**Canonical header order:** `@id`, `@by`, `@tag`, `@input`, `@file`
 
 #### 3.1.1 `@id` Header
 
@@ -157,7 +156,7 @@ References an item that precedes the content. For example, if the content is an 
 - `@input` can be used with or without `@file`
 - `@input` does not affect content handling (inline content and `@file` rules still apply)
 - Parsers SHOULD verify referenced files exist (W009 warning if missing)
-- Supports line/character ranges (see 3.1.7)
+- Supports line/character ranges (see 3.1.6)
 
 #### 3.1.5 `@file` Header
 
@@ -173,41 +172,9 @@ References external content. In V2, `@file` and inline content can coexist: `@fi
 - Relative paths are resolved relative to the MarkBack file location
 - `@file` and inline content MAY coexist (`@file` is provenance, inline content is snapshot)
 - Parsers SHOULD verify referenced files exist (W003 warning if missing)
-- Supports line/character ranges (see 3.1.7)
+- Supports line/character ranges (see 3.1.6)
 
-#### 3.1.6 `@excerpt` Header
-
-Quotes a passage from the source being annotated. Useful when:
-- The source is mutable (URLs, evolving documents) and line numbers may drift
-- The source has no useful line numbers (text copied from a browser)
-- You want the quoted text visible in the `.mb` file itself for review
-
-`@excerpt` is independent of `@file` line ranges and may coexist with them.
-
-**Single-line form:**
-```
-@excerpt the quick brown fox jumped over the lazy dog
-@file ./essay.txt:5:10-5:50 <<< awkward; consider rephrasing
-```
-
-**Multi-line form** (triple-quoted block):
-```
-@excerpt """
-The quick brown fox
-jumps over the lazy dog.
-"""
-@file https://example.com/post.html <<< unclear
-```
-
-**Rules:**
-- Single-line: value extends to end of line, freeform text
-- Multi-line: when the value on the `@excerpt` line is exactly `"""`, subsequent lines (until a line containing only `"""`) are taken as the excerpt
-- Triple-quoted excerpts cannot themselves contain a line that is exactly `"""`
-- The excerpt is informational; parsers do not validate it appears in the source
-- Optional; may coexist with `@file`, `@input`, line ranges, and inline content
-- Unclosed `"""` block raises E012
-
-#### 3.1.7 Line and Character Range Specification
+#### 3.1.6 Line and Character Range Specification
 
 Both `@file` and `@input` headers support optional line and character range specifications using colon notation. This allows referencing specific positions within a file.
 
@@ -254,7 +221,18 @@ Any text is valid here.
 - Content ends when `<<<` is encountered
 - Content preserves internal whitespace exactly
 - Leading/trailing blank lines in content are trimmed during canonicalization
-- `@file` and inline content MAY coexist (file is provenance, content is snapshot)
+- `@file` and inline content MAY coexist (file is provenance, content is what the reviewer saw)
+
+When `@file` is present, the inline content can be either a full snapshot of the file or just an excerpt — a quoted passage. This is useful when the source is mutable (URLs, evolving documents) or has no useful line numbers (text copied from a browser), and you want the quoted passage visible in the `.mb` file itself:
+
+```
+@file https://example.com/post.html
+
+The quick brown fox jumps over the lazy dog.
+<<< awkward phrasing
+```
+
+Parsers do not distinguish snapshots from excerpts — both are stored as `content`.
 
 #### 3.2.1 Blank Line Requirement
 
@@ -801,7 +779,6 @@ Discovery priority:
 | E009 | Empty feedback (nothing after `<<<`) |
 | E010 | Missing blank line before inline content (content starts with `@`) |
 | E011 | Invalid line/character range (end position before start position) |
-| E012 | Unclosed `@excerpt """` block |
 
 ### 9.2 Warnings (SHOULD fix)
 
@@ -1233,7 +1210,7 @@ Alternatively, run the file through a V2 normalizer which performs all mappings 
 - Line/character range syntax on `@file` and `@input`
 - `<<<` feedback delimiter semantics
 - `---` record separator semantics
-- All other error codes (E001, E002, E004, E006-E012)
+- All other error codes (E001, E002, E004, E006-E011)
 - All other warning codes (W001-W009)
 
 ### v1.0.0 (2026-01-04)

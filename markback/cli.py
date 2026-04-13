@@ -341,7 +341,6 @@ def _add_single(
     input_ref: Optional[FileRef],
     tags: list[str],
     by: Optional[str],
-    excerpt: Optional[str] = None,
 ) -> None:
     """Handle single-file feedback entry."""
     is_url = _is_url(target)
@@ -359,7 +358,7 @@ def _add_single(
             if not is_url and not target_path.exists():
                 err_console.print(f"[red]Target file not found: {target}[/red]")
                 raise typer.Exit(1)
-            write_file(mb_path, [Record(file=file_ref, feedback="", excerpt=excerpt)])
+            write_file(mb_path, [Record(file=file_ref, feedback="")])
         open_editor(mb_path)
     else:
         content = None if is_url else _read_inline_content(target_path)
@@ -369,7 +368,6 @@ def _add_single(
             input=input_ref,
             tags=tags,
             by=by,
-            excerpt=excerpt,
             content=content,
         )
         if mb_path.exists():
@@ -390,7 +388,6 @@ def _add_multi(
     print_content: bool,
     scope: Optional[list[str]],
     covers: Optional[str],
-    excerpt: Optional[str] = None,
 ) -> None:
     """Handle multi-file feedback entry (batch or interactive)."""
     if feedback is not None:
@@ -401,7 +398,6 @@ def _add_multi(
                 input=input_ref,
                 tags=tags,
                 by=by,
-                excerpt=excerpt,
                 content=_read_inline_content(Path(f)),
             )
             for f in matches
@@ -431,7 +427,6 @@ def _add_multi(
                         input=input_ref,
                         tags=tags,
                         by=by,
-                        excerpt=excerpt,
                         content=_read_inline_content(Path(match)),
                     )
                 )
@@ -459,7 +454,6 @@ def main(
     input_ref: Optional[str] = typer.Option(None, "--input", help="Path to input/prior file"),
     tag: Optional[str] = typer.Option(None, "--tag", help="Space-separated tags"),
     by: Optional[str] = typer.Option(None, "--by", help="Reviewer attribution"),
-    excerpt: Optional[str] = typer.Option(None, "--excerpt", "-e", help="Quoted excerpt of the source"),
     print_content: bool = typer.Option(False, "--print", help="Print file contents before prompting"),
     # Sweep options
     scope: Optional[str] = typer.Option(None, "--scope", help="Space-separated scope items for sweep"),
@@ -524,15 +518,15 @@ def main(
         if not matches:
             err_console.print(f"[red]No files match pattern: {files[0]}[/red]")
             raise typer.Exit(1)
-        _add_multi(matches, feedback, input_file_ref, tags, by, print_content, scope_list, covers, excerpt)
+        _add_multi(matches, feedback, input_file_ref, tags, by, print_content, scope_list, covers)
     elif len(files) == 2 and not _is_glob(files[0]) and not Path(files[1]).exists():
         # Positional shorthand: mb file.txt "some feedback"
-        _add_single(files[0], files[1], input_file_ref, tags, by, excerpt)
+        _add_single(files[0], files[1], input_file_ref, tags, by)
     elif len(files) == 1:
-        _add_single(files[0], feedback, input_file_ref, tags, by, excerpt)
+        _add_single(files[0], feedback, input_file_ref, tags, by)
     else:
         # Multiple files (shell-expanded glob or explicit list)
-        _add_multi(files, feedback, input_file_ref, tags, by, print_content, scope_list, covers, excerpt)
+        _add_multi(files, feedback, input_file_ref, tags, by, print_content, scope_list, covers)
 
 
 def cli():
