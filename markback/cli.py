@@ -1,4 +1,4 @@
-"""MarkBack command-line interface."""
+"""MarkBack V2 command-line interface."""
 
 import glob as glob_module
 import json
@@ -15,15 +15,15 @@ from rich.console import Console
 from .config import init_env
 from .linter import format_diagnostics, lint_file, lint_files, summarize_results
 from .parser import parse_directory, parse_file
-from .types import Record, SourceRef
-from .writer import OutputMode, normalize_file, write_file, write_paired_files
+from .types import FileRef, Record
+from .writer import OutputMode, normalize, write, write_file, write_string
 
 err_console = Console(stderr=True)
 out_console = Console()
 
 
 def get_mb_path(target: Path) -> Path:
-    """Get the .mb file path for a target file."""
+    """Get the .mb sidecar path for a target file."""
     return target.with_suffix(target.suffix + ".mb")
 
 
@@ -81,7 +81,6 @@ def _is_text_file(path: Path) -> bool:
         return False
 
 
-# Max file size (in bytes) for embedding content inline
 _MAX_INLINE_SIZE = 65_536
 
 
@@ -184,7 +183,7 @@ def _do_normalize(targets: list[str], output: Optional[str], in_place: bool):
     inp = Path(targets[0])
     out = Path(output) if output else None
 
-    content = normalize_file(inp, output_path=out, in_place=in_place)
+    content = normalize(inp, output_path=out, in_place=in_place)
 
     if not out and not in_place:
         typer.echo(content, nl=False)
@@ -210,20 +209,10 @@ def _do_convert(targets: list[str], output: Optional[str], to_format: str):
     try:
         mode = OutputMode(to_format)
     except ValueError:
-        err_console.print(f"[red]Unknown format: {to_format}. Use: single, multi, compact, paired[/red]")
+        err_console.print(f"[red]Unknown format: {to_format}. Use: single, multi, compact[/red]")
         raise typer.Exit(1)
 
-    if mode == OutputMode.PAIRED:
-        out.mkdir(parents=True, exist_ok=True)
-        for i, record in enumerate(result.records):
-            identifier = record.get_identifier() or f"record-{i}"
-            safe_name = identifier.replace("/", "_").replace(":", "_").replace(" ", "_")
-            label_path = out / f"{safe_name}.label.txt"
-            content_path = out / f"{safe_name}.txt"
-            write_paired_files(label_path, content_path, record, write_content=record.has_inline_content())
-    else:
-        write_file(out, result.records, mode=mode)
-
+    write_file(out, result.records, mode=mode)
     err_console.print(f"Converted {len(result.records)} record(s) to {to_format} format")
 
 
@@ -239,26 +228,124 @@ def _do_init(targets: list[str], force: bool):
         raise typer.Exit(1)
 
 
-def _add_single(target: str, feedback: Optional[str], prior_ref: Optional[SourceRef]) -> None:
+def _do_upgrade(targets: list[str], dry_run: bool):
+    """Upgrade V1 files to V2 format."""
+    if not targets:
+        err_console.print("[red]No files specified for --upgrade[/red]")
+        raise typer.Exit(1)
+
+    for target in targets:
+        path = Path(target)
+        if path.is_dir():
+            files = list(path.glob("**/*.mb"))
+        else:
+            files = [path]
+
+        for f in files:
+            result = parse_file(f)
+            v1_warnings = [d for d in result.diagnostics if d.code == WarningCode.W010]
+
+            if not v1_warnings:
+                typer.echo(f"  {f}: already V2 format")
+                continue
+
+            if dry_run:
+                typer.echo(f"  {f}: {len(v1_warnings)} V1 header(s) to upgrade")
+            else:
+                content = write_string(
+                    result.records,
+                    scope=result.scope,
+                    covers=result.covers,
+                    version_header=True,
+                )
+                f.write_text(content, encoding="utf-8")
+                err_console.print(f"  Upgraded {f}")
+
+
+def _do_stats(targets: list[str], json_output: bool):
+    """Show statistics for MarkBack files."""
+    all_records: list[Record] = []
+    file_count = 0
+
+    for p in targets:
+        path = Path(p)
+        if path.is_dir():
+            result = parse_directory(path)
+        else:
+            result = parse_file(path)
+            file_count += 1
+        all_records.extend(result.records)
+
+    # Compute stats
+    tag_counts: dict[str, int] = {}
+    by_counts: dict[str, int] = {}
+    with_file = sum(1 for r in all_records if r.file)
+    with_content = sum(1 for r in all_records if r.has_inline_content())
+    with_input = sum(1 for r in all_records if r.input)
+
+    for r in all_records:
+        for t in r.tags:
+            tag_counts[t] = tag_counts.get(t, 0) + 1
+        if r.by:
+            by_counts[r.by] = by_counts.get(r.by, 0) + 1
+
+    stats = {
+        "records": len(all_records),
+        "with_file_ref": with_file,
+        "with_inline_content": with_content,
+        "with_input_ref": with_input,
+        "tags": tag_counts,
+        "reviewers": by_counts,
+    }
+
+    if json_output:
+        typer.echo(json.dumps(stats, indent=2))
+    else:
+        typer.echo(f"Records: {len(all_records)}")
+        typer.echo(f"  With @file: {with_file}")
+        typer.echo(f"  With inline content: {with_content}")
+        typer.echo(f"  With @input: {with_input}")
+        if tag_counts:
+            typer.echo("Tags:")
+            for tag, count in sorted(tag_counts.items(), key=lambda x: -x[1]):
+                typer.echo(f"  {tag}: {count}")
+        if by_counts:
+            typer.echo("Reviewers:")
+            for by, count in sorted(by_counts.items(), key=lambda x: -x[1]):
+                typer.echo(f"  {by}: {count}")
+
+
+# Import here to avoid circular import at module level
+from .types import WarningCode
+
+
+def _add_single(
+    target: str,
+    feedback: Optional[str],
+    input_ref: Optional[FileRef],
+    tags: list[str],
+    by: Optional[str],
+) -> None:
     """Handle single-file feedback entry."""
     target_path = Path(target)
     mb_path = get_mb_path(target_path)
 
     if feedback is None:
-        # No feedback arg — open editor
         if not mb_path.exists():
             if not target_path.exists():
                 err_console.print(f"[red]Target file not found: {target}[/red]")
                 raise typer.Exit(1)
-            record = Record(source=SourceRef(target), feedback="")
+            record = Record(file=FileRef(target), feedback="")
             write_file(mb_path, [record])
         open_editor(mb_path)
     else:
         content = _read_inline_content(target_path)
         new_record = Record(
-            source=SourceRef(target),
+            file=FileRef(target),
             feedback=feedback,
-            prior=prior_ref,
+            input=input_ref,
+            tags=tags,
+            by=by,
             content=content,
         )
         if mb_path.exists():
@@ -273,22 +360,28 @@ def _add_single(target: str, feedback: Optional[str], prior_ref: Optional[Source
 def _add_multi(
     matches: list[str],
     feedback: Optional[str],
-    prior_ref: Optional[SourceRef],
+    input_ref: Optional[FileRef],
+    tags: list[str],
+    by: Optional[str],
     print_content: bool,
+    scope: Optional[list[str]],
+    covers: Optional[str],
 ) -> None:
     """Handle multi-file feedback entry (batch or interactive)."""
     if feedback is not None:
         records = [
             Record(
-                source=SourceRef(f),
+                file=FileRef(f),
                 feedback=feedback,
-                prior=prior_ref,
+                input=input_ref,
+                tags=tags,
+                by=by,
                 content=_read_inline_content(Path(f)),
             )
             for f in matches
         ]
         output_path = get_feedback_path(_output_dir_for(matches))
-        write_file(output_path, records, mode=OutputMode.MULTI)
+        write(output_path, records, scope=scope, covers=covers)
         err_console.print(f"Wrote {len(records)} record(s) to {output_path}")
     else:
         collected: list[Record] = []
@@ -307,16 +400,18 @@ def _add_multi(
             if fb.strip():
                 collected.append(
                     Record(
-                        source=SourceRef(match),
+                        file=FileRef(match),
                         feedback=fb.strip(),
-                        prior=prior_ref,
+                        input=input_ref,
+                        tags=tags,
+                        by=by,
                         content=_read_inline_content(Path(match)),
                     )
                 )
 
         if collected:
             output_path = get_feedback_path(_output_dir_for(matches))
-            write_file(output_path, collected, mode=OutputMode.MULTI)
+            write(output_path, collected, scope=scope, covers=covers)
             err_console.print(f"Wrote {len(collected)} record(s) to {output_path}")
         else:
             err_console.print("No feedback entered.")
@@ -324,7 +419,7 @@ def _add_multi(
 
 app = typer.Typer(
     name="mb",
-    help="MarkBack: annotate files with feedback.",
+    help="MarkBack V2: annotate files with feedback.",
     add_completion=False,
 )
 
@@ -334,22 +429,30 @@ def main(
     targets: Optional[list[str]] = typer.Argument(None, help="Target file(s) or glob pattern"),
     # Annotation options
     feedback: Optional[str] = typer.Option(None, "--feedback", "-f", help="Feedback text"),
-    prior: Optional[str] = typer.Option(None, "--prior", help="Path to prior file"),
+    input_ref: Optional[str] = typer.Option(None, "--input", help="Path to input/prior file"),
+    tag: Optional[str] = typer.Option(None, "--tag", help="Space-separated tags"),
+    by: Optional[str] = typer.Option(None, "--by", help="Reviewer attribution"),
     print_content: bool = typer.Option(False, "--print", help="Print file contents before prompting"),
+    # Sweep options
+    scope: Optional[str] = typer.Option(None, "--scope", help="Space-separated scope items for sweep"),
+    covers: Optional[str] = typer.Option(None, "--covers", help="Glob pattern declaring file coverage"),
     # Utility modes
     do_lint: bool = typer.Option(False, "--lint", help="Lint the target file(s)"),
     do_list: bool = typer.Option(False, "--list", help="List records in the target file(s)"),
     do_normalize: bool = typer.Option(False, "--normalize", help="Normalize a file to canonical format"),
     do_convert: bool = typer.Option(False, "--convert", help="Convert a file to a different format"),
     do_init: bool = typer.Option(False, "--init", help="Initialize a .env config file"),
+    do_upgrade: bool = typer.Option(False, "--upgrade", help="Upgrade V1 files to V2 format"),
+    do_stats: bool = typer.Option(False, "--stats", help="Show statistics for MarkBack files"),
     # Utility options
-    json_output: bool = typer.Option(False, "--json", help="Output as JSON (with --lint or --list)"),
-    no_source_check: bool = typer.Option(False, "--no-source-check", help="Skip source file checks (with --lint)"),
-    no_canonical_check: bool = typer.Option(False, "--no-canonical-check", help="Skip canonical checks (with --lint)"),
-    output: Optional[str] = typer.Option(None, "--output", "-o", help="Output file (with --normalize or --convert)"),
-    in_place: bool = typer.Option(False, "--in-place", help="Modify file in place (with --normalize)"),
-    to_format: Optional[str] = typer.Option(None, "--to", help="Target format: single, multi, compact, paired (with --convert)"),
-    force: bool = typer.Option(False, "--force", help="Overwrite existing file (with --init)"),
+    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+    no_source_check: bool = typer.Option(False, "--no-source-check", help="Skip file existence checks"),
+    no_canonical_check: bool = typer.Option(False, "--no-canonical-check", help="Skip canonical checks"),
+    output: Optional[str] = typer.Option(None, "--output", "-o", help="Output file"),
+    in_place: bool = typer.Option(False, "--in-place", help="Modify file in place"),
+    to_format: Optional[str] = typer.Option(None, "--to", help="Target format: single, multi, compact"),
+    force: bool = typer.Option(False, "--force", help="Overwrite existing file"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview upgrade without writing"),
     # Meta
     version: bool = typer.Option(False, "--version", "-V", callback=version_callback, is_eager=True, help="Show version and exit."),
 ):
@@ -375,13 +478,21 @@ def main(
             raise typer.Exit(1)
         _do_convert(files, output, to_format)
         return
+    if do_upgrade:
+        _do_upgrade(files, dry_run)
+        return
+    if do_stats:
+        _do_stats(files, json_output)
+        return
 
     # Default: annotation mode
     if not files:
         typer.echo("Usage: mb [OPTIONS] TARGET [TARGET...]\n\nTry 'mb --help' for help.")
         raise typer.Exit(0)
 
-    prior_ref = SourceRef(prior) if prior else None
+    input_file_ref = FileRef(input_ref) if input_ref else None
+    tags = tag.split() if tag else []
+    scope_list = scope.split() if scope else None
 
     # Single target with glob chars — expand it
     if len(files) == 1 and _is_glob(files[0]):
@@ -389,15 +500,15 @@ def main(
         if not matches:
             err_console.print(f"[red]No files match pattern: {files[0]}[/red]")
             raise typer.Exit(1)
-        _add_multi(matches, feedback, prior_ref, print_content)
+        _add_multi(matches, feedback, input_file_ref, tags, by, print_content, scope_list, covers)
     elif len(files) == 2 and not _is_glob(files[0]) and not Path(files[1]).exists():
         # Positional shorthand: mb file.txt "some feedback"
-        _add_single(files[0], files[1], prior_ref)
+        _add_single(files[0], files[1], input_file_ref, tags, by)
     elif len(files) == 1:
-        _add_single(files[0], feedback, prior_ref)
+        _add_single(files[0], feedback, input_file_ref, tags, by)
     else:
         # Multiple files (shell-expanded glob or explicit list)
-        _add_multi(files, feedback, prior_ref, print_content)
+        _add_multi(files, feedback, input_file_ref, tags, by, print_content, scope_list, covers)
 
 
 def cli():

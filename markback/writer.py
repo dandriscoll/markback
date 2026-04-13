@@ -1,67 +1,58 @@
-"""MarkBack canonical writer implementation."""
+"""MarkBack V2 writer implementation."""
 
 from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-from .types import Record, SourceRef
+from .types import Record, FileRef
 
 
 class OutputMode(Enum):
     """Output format modes."""
-    SINGLE = "single"      # One record per file
-    MULTI = "multi"        # Multiple records in one file
-    COMPACT = "compact"    # Compact label list format
-    PAIRED = "paired"      # Separate content and label files
+    SINGLE = "single"
+    MULTI = "multi"
+    COMPACT = "compact"
 
 
-def write_record_canonical(
+def _write_record_canonical(
     record: Record,
     prefer_compact: bool = True,
 ) -> str:
-    """Write a single record in canonical format.
-
-    Args:
-        record: The record to write
-        prefer_compact: If True, use compact format when possible (source + no content)
-
-    Returns:
-        Canonical string representation
-    """
+    """Write a single record in canonical V2 format."""
     lines: list[str] = []
 
-    # Determine if we should use compact format
     use_compact = (
         prefer_compact
-        and record.source is not None
+        and record.file is not None
         and not record.has_inline_content()
     )
 
     if use_compact:
-        # Compact format: @uri, @by, @prior on own lines (if present), then @source ... <<<
-        if record.uri:
-            lines.append(f"@uri {record.uri}")
+        # Compact format: headers on own lines, then @file ... <<<
+        if record.id:
+            lines.append(f"@id {record.id}")
         if record.by:
             lines.append(f"@by {record.by}")
-        if record.prior:
-            lines.append(f"@prior {record.prior}")
-        lines.append(f"@source {record.source} <<< {record.feedback}")
+        if record.tags:
+            lines.append(f"@tag {' '.join(record.tags)}")
+        if record.input:
+            lines.append(f"@input {record.input}")
+        lines.append(f"@file {record.file} <<< {record.feedback}")
     else:
         # Full format
-        # Headers: @uri first, then @by, then @prior, then @source
-        if record.uri:
-            lines.append(f"@uri {record.uri}")
+        if record.id:
+            lines.append(f"@id {record.id}")
         if record.by:
             lines.append(f"@by {record.by}")
-        if record.prior:
-            lines.append(f"@prior {record.prior}")
-        if record.source:
-            lines.append(f"@source {record.source}")
+        if record.tags:
+            lines.append(f"@tag {' '.join(record.tags)}")
+        if record.input:
+            lines.append(f"@input {record.input}")
+        if record.file:
+            lines.append(f"@file {record.file}")
 
-        # Content block (with blank line if content present)
         if record.has_inline_content():
             lines.append("")  # Blank line before content
-            # Normalize content: trim leading/trailing blank lines
             content_lines = record.content.split('\n')
             while content_lines and not content_lines[0].strip():
                 content_lines.pop(0)
@@ -69,101 +60,190 @@ def write_record_canonical(
                 content_lines.pop()
             lines.extend(content_lines)
 
-        # Feedback line
         lines.append(f"<<< {record.feedback}")
 
     return '\n'.join(lines)
 
 
-def write_records_multi(
-    records: list[Record],
-    prefer_compact: bool = True,
+def _write_file_headers(
+    version: bool = True,
+    scope: Optional[list[str]] = None,
+    covers: Optional[str] = None,
 ) -> str:
-    """Write multiple records in multi-record format.
+    """Write file-level % headers."""
+    lines: list[str] = []
+    if version:
+        lines.append("%markback 2")
+    if scope:
+        lines.append(f"%scope {' '.join(scope)}")
+    if covers:
+        lines.append(f"%covers {covers}")
+    return '\n'.join(lines)
 
-    Args:
-        records: List of records to write
-        prefer_compact: If True, use compact format when possible
 
-    Returns:
-        Canonical multi-record string
+def write(
+    path,
+    records: list[Record],
+    compact: bool = False,
+    scope: Optional[list[str]] = None,
+    covers: Optional[str] = None,
+    version_header: bool = True,
+) -> None:
+    """Write records to a file.
+
+    Auto-detects format: uses compact when all records have @file and no inline content,
+    or when compact=True. Otherwise uses multi-record format with --- separators.
     """
-    if not records:
+    path = Path(path)
+    content = write_string(
+        records,
+        compact=compact,
+        scope=scope,
+        covers=covers,
+        version_header=version_header,
+    )
+    path.write_text(content, encoding="utf-8")
+
+
+def write_string(
+    records: list[Record],
+    compact: bool = False,
+    scope: Optional[list[str]] = None,
+    covers: Optional[str] = None,
+    version_header: bool = True,
+) -> str:
+    """Write records to a string."""
+    if not records and not scope and not covers:
         return ""
 
-    result_parts: list[str] = []
+    parts: list[str] = []
+
+    # File-level headers
+    file_header = _write_file_headers(
+        version=version_header,
+        scope=scope,
+        covers=covers,
+    )
+    if file_header:
+        parts.append(file_header)
+        parts.append("")  # blank line after file headers
+
+    # Auto-detect compact if not explicitly set
+    auto_compact = compact or all(
+        r.file is not None and not r.has_inline_content()
+        for r in records
+    )
+
+    if not records:
+        return '\n'.join(parts) + "\n"
+
+    record_parts: list[str] = []
     prev_was_compact = False
 
     for i, record in enumerate(records):
         is_compact = (
-            prefer_compact
-            and record.source is not None
+            auto_compact
+            and record.file is not None
             and not record.has_inline_content()
         )
 
-        # Add separator between records
         if i > 0:
-            # Compact records in sequence don't need separators
             if is_compact and prev_was_compact:
-                result_parts.append("\n")
+                record_parts.append("\n")
             else:
-                # Add blank line then separator then newline
-                result_parts.append("\n---\n")
+                record_parts.append("\n---\n")
 
-        record_str = write_record_canonical(record, prefer_compact=prefer_compact)
-        result_parts.append(record_str)
+        record_str = _write_record_canonical(record, prefer_compact=is_compact)
+        record_parts.append(record_str)
         prev_was_compact = is_compact
 
-    return ''.join(result_parts) + "\n"
+    parts.append(''.join(record_parts))
+
+    return '\n'.join(parts) + "\n" if parts else ""
+
+
+def append(
+    path,
+    record: Record,
+    version_header: bool = True,
+) -> None:
+    """Append a record to an existing file, or create it."""
+    from .parser import parse_file
+
+    path = Path(path)
+
+    if path.exists():
+        existing = parse_file(path)
+        all_records = existing.records + [record]
+        # Preserve scope/covers from existing file
+        write(
+            path,
+            all_records,
+            scope=existing.scope,
+            covers=existing.covers,
+            version_header=version_header,
+        )
+    else:
+        write(path, [record], version_header=version_header)
+
+
+def normalize(
+    path,
+    in_place: bool = False,
+    output_path=None,
+) -> str:
+    """Read a MarkBack file and write it in canonical V2 form."""
+    from .parser import parse_file
+
+    path = Path(path)
+    result = parse_file(path)
+
+    if result.has_errors:
+        raise ValueError(f"Cannot normalize file with errors: {path}")
+
+    content = write_string(
+        result.records,
+        scope=result.scope,
+        covers=result.covers,
+    )
+
+    if output_path:
+        Path(output_path).write_text(content, encoding="utf-8")
+    elif in_place:
+        path.write_text(content, encoding="utf-8")
+
+    return content
+
+
+# === V1 backward compatibility aliases ===
+
+def write_record_canonical(record: Record, prefer_compact: bool = True) -> str:
+    """V1 compat: write a single record in canonical format."""
+    return _write_record_canonical(record, prefer_compact=prefer_compact)
+
+
+def write_records_multi(records: list[Record], prefer_compact: bool = True) -> str:
+    """V1 compat: write multiple records in multi-record format."""
+    return write_string(records, compact=False, version_header=False)
 
 
 def write_records_compact(records: list[Record]) -> str:
-    """Write records in compact label list format.
-
-    All records are written as single-line @source ... <<< entries.
-    Records without source will have source derived from URI or index.
-    """
-    lines: list[str] = []
-
-    for i, record in enumerate(records):
-        if record.uri and record.source:
-            lines.append(f"@uri {record.uri}")
-            lines.append(f"@source {record.source} <<< {record.feedback}")
-            lines.append("")  # Blank line for grouping
-        elif record.source:
-            lines.append(f"@source {record.source} <<< {record.feedback}")
-        else:
-            # No source - need to create a placeholder or use full format
-            if record.uri:
-                lines.append(f"@uri {record.uri}")
-            if record.has_inline_content():
-                # Can't use compact for this record
-                lines.append("")
-                lines.extend(record.content.split('\n'))
-            lines.append(f"<<< {record.feedback}")
-
-    # Remove trailing empty lines and add final newline
-    while lines and not lines[-1]:
-        lines.pop()
-
-    return '\n'.join(lines) + "\n" if lines else ""
+    """V1 compat: write records in compact format."""
+    return write_string(records, compact=True, version_header=False)
 
 
 def write_label_file(record: Record) -> str:
-    """Write a label file for paired mode (no content, just headers + feedback)."""
+    """V1 compat: write a label file for sidecar mode."""
     lines: list[str] = []
-
-    if record.uri:
-        lines.append(f"@uri {record.uri}")
-
+    if record.id:
+        lines.append(f"@id {record.id}")
     if record.by:
         lines.append(f"@by {record.by}")
-
-    if record.prior:
-        lines.append(f"@prior {record.prior}")
-
+    if record.tags:
+        lines.append(f"@tag {' '.join(record.tags)}")
+    if record.input:
+        lines.append(f"@input {record.input}")
     lines.append(f"<<< {record.feedback}")
-
     return '\n'.join(lines) + "\n"
 
 
@@ -173,30 +253,17 @@ def write_file(
     mode: OutputMode = OutputMode.MULTI,
     prefer_compact: bool = True,
 ) -> None:
-    """Write records to a file.
+    """V1 compat: write records to a file."""
+    path = Path(path)
 
-    Args:
-        path: Output file path
-        records: Records to write
-        mode: Output format mode
-        prefer_compact: For MULTI mode, prefer compact format when possible
-    """
     if mode == OutputMode.SINGLE:
         if len(records) != 1:
             raise ValueError(f"SINGLE mode requires exactly 1 record, got {len(records)}")
-        content = write_record_canonical(records[0], prefer_compact=prefer_compact) + "\n"
-
+        content = _write_record_canonical(records[0], prefer_compact=prefer_compact) + "\n"
     elif mode == OutputMode.MULTI:
-        content = write_records_multi(records, prefer_compact=prefer_compact)
-
+        content = write_string(records, version_header=False)
     elif mode == OutputMode.COMPACT:
-        content = write_records_compact(records)
-
-    elif mode == OutputMode.PAIRED:
-        if len(records) != 1:
-            raise ValueError(f"PAIRED mode requires exactly 1 record, got {len(records)}")
-        content = write_label_file(records[0])
-
+        content = write_string(records, compact=True, version_header=False)
     else:
         raise ValueError(f"Unknown output mode: {mode}")
 
@@ -209,21 +276,12 @@ def write_paired_files(
     record: Record,
     write_content: bool = False,
 ) -> None:
-    """Write paired label + content files.
-
-    Args:
-        label_path: Path for the label file
-        content_path: Path for the content file (optional)
-        record: The record to write
-        write_content: If True, write content to content_path (only for text content)
-    """
-    # Write label file
+    """V1 compat: write paired label + content files."""
     label_content = write_label_file(record)
-    label_path.write_text(label_content, encoding="utf-8")
+    Path(label_path).write_text(label_content, encoding="utf-8")
 
-    # Optionally write content file
     if write_content and content_path and record.content:
-        content_path.write_text(record.content, encoding="utf-8")
+        Path(content_path).write_text(record.content, encoding="utf-8")
 
 
 def normalize_file(
@@ -231,33 +289,5 @@ def normalize_file(
     output_path: Optional[Path] = None,
     in_place: bool = False,
 ) -> str:
-    """Read a MarkBack file and write it in canonical form.
-
-    Args:
-        input_path: Input file path
-        output_path: Output file path (if None and in_place=True, overwrites input)
-        in_place: If True and output_path is None, overwrite input file
-
-    Returns:
-        The canonical content
-    """
-    from .parser import parse_file
-
-    result = parse_file(input_path)
-
-    if result.has_errors:
-        raise ValueError(f"Cannot normalize file with errors: {input_path}")
-
-    # Determine output format based on input
-    if len(result.records) == 1:
-        content = write_record_canonical(result.records[0]) + "\n"
-    else:
-        content = write_records_multi(result.records)
-
-    # Write output
-    if output_path:
-        output_path.write_text(content, encoding="utf-8")
-    elif in_place:
-        input_path.write_text(content, encoding="utf-8")
-
-    return content
+    """V1 compat: normalize a file."""
+    return normalize(input_path, in_place=in_place, output_path=output_path)

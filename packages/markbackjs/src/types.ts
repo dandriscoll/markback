@@ -30,6 +30,7 @@ export enum WarningCode {
   W007 = "W007",
   W008 = "W008",
   W009 = "W009",
+  W010 = "W010",
 }
 
 export type DiagnosticCode = ErrorCode | WarningCode;
@@ -64,6 +65,10 @@ export class Diagnostic {
     this.code = init.code;
     this.message = init.message;
     this.recordIndex = init.recordIndex ?? null;
+  }
+
+  get isError(): boolean {
+    return this.severity === Severity.ERROR;
   }
 
   toString(): string {
@@ -101,10 +106,9 @@ function extractScheme(value: string): string | null {
 }
 
 // Regex to parse line/character range from a path
-// Supports: path:line, path:line:col, path:line-line, path:line:col-line:col
 const LINE_RANGE_PATTERN = /^(.+?):(\d+)(?::(\d+))?(?:-(\d+)(?::(\d+))?)?$/;
 
-export class SourceRef {
+export class FileRef {
   value: string;
   isUri: boolean;
   startLine: number | null;
@@ -121,7 +125,6 @@ export class SourceRef {
     this.endColumn = null;
     this._pathOnly = value;
 
-    // Parse line range if present
     this._parseLineRange();
 
     if (isUri) {
@@ -129,7 +132,6 @@ export class SourceRef {
       return;
     }
 
-    // Determine if this is a URI (using path without line range)
     const scheme = extractScheme(this._pathOnly);
     this.isUri = !!scheme && scheme.length > 1;
   }
@@ -148,7 +150,6 @@ export class SourceRef {
           this.endColumn = parseInt(match[5], 10);
         }
       } else {
-        // Single line/position reference: start and end are the same
         this.endLine = this.startLine;
         this.endColumn = this.startColumn;
       }
@@ -164,7 +165,6 @@ export class SourceRef {
       return null;
     }
 
-    // Build start position
     let start: string;
     if (this.startColumn !== null) {
       start = `:${this.startLine}:${this.startColumn}`;
@@ -172,12 +172,10 @@ export class SourceRef {
       start = `:${this.startLine}`;
     }
 
-    // Check if end is the same as start (single position)
     if (this.startLine === this.endLine && this.startColumn === this.endColumn) {
       return start;
     }
 
-    // Build end position
     let end: string;
     if (this.endColumn !== null) {
       end = `-${this.endLine}:${this.endColumn}`;
@@ -213,53 +211,61 @@ export class SourceRef {
   }
 }
 
+// V1 backward compatibility alias
+export const SourceRef = FileRef;
+
 export interface RecordInit {
   feedback: string;
-  uri?: string | null;
+  id?: string | null;
   by?: string | null;
-  source?: SourceRef | null;
-  prior?: SourceRef | null;
+  file?: FileRef | null;
+  input?: FileRef | null;
+  tags?: string[];
   content?: string | null;
   metadata?: UnknownMap;
   _sourceFile?: string | null;
   _startLine?: number | null;
   _endLine?: number | null;
-  _isCompact?: boolean;
 }
 
 export class Record {
   feedback: string;
-  uri: string | null;
+  id: string | null;
   by: string | null;
-  source: SourceRef | null;
-  prior: SourceRef | null;
+  file: FileRef | null;
+  input: FileRef | null;
+  tags: string[];
   content: string | null;
   metadata: UnknownMap;
   _sourceFile: string | null;
   _startLine: number | null;
   _endLine: number | null;
-  _isCompact: boolean;
 
   constructor(init: RecordInit) {
     this.feedback = init.feedback;
-    this.uri = init.uri ?? null;
+    this.id = init.id ?? null;
     this.by = init.by ?? null;
-    this.source = init.source ?? null;
-    this.prior = init.prior ?? null;
+    this.file = init.file ?? null;
+    this.input = init.input ?? null;
+    this.tags = init.tags ?? [];
     this.content = init.content ?? null;
     this.metadata = init.metadata ?? {};
     this._sourceFile = init._sourceFile ?? null;
     this._startLine = init._startLine ?? null;
     this._endLine = init._endLine ?? null;
-    this._isCompact = init._isCompact ?? false;
   }
 
+  // V1 compat getters
+  get uri(): string | null { return this.id; }
+  get source(): FileRef | null { return this.file; }
+  get prior(): FileRef | null { return this.input; }
+
   getIdentifier(): string | null {
-    if (this.uri) {
-      return this.uri;
+    if (this.id) {
+      return this.id;
     }
-    if (this.source) {
-      return this.source.toString();
+    if (this.file) {
+      return this.file.toString();
     }
     return null;
   }
@@ -270,10 +276,11 @@ export class Record {
 
   toDict(): UnknownMap {
     return {
-      uri: this.uri,
+      id: this.id,
       by: this.by,
-      source: this.source ? this.source.toString() : null,
-      prior: this.prior ? this.prior.toString() : null,
+      file: this.file ? this.file.toString() : null,
+      input: this.input ? this.input.toString() : null,
+      tags: this.tags,
       content: this.content,
       feedback: this.feedback,
       metadata: this.metadata,
@@ -285,11 +292,24 @@ export class ParseResult {
   records: Record[];
   diagnostics: Diagnostic[];
   sourceFile: string | null;
+  scope: string[] | null;
+  covers: string | null;
+  version: number | null;
 
-  constructor(records: Record[], diagnostics: Diagnostic[], sourceFile?: string | null) {
+  constructor(
+    records: Record[],
+    diagnostics: Diagnostic[],
+    sourceFile?: string | null,
+    scope?: string[] | null,
+    covers?: string | null,
+    version?: number | null,
+  ) {
     this.records = records;
     this.diagnostics = diagnostics;
     this.sourceFile = sourceFile ?? null;
+    this.scope = scope ?? null;
+    this.covers = covers ?? null;
+    this.version = version ?? null;
   }
 
   get hasErrors(): boolean {

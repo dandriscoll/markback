@@ -6,7 +6,7 @@ Write a poem about nature.
 <<< good; consider adding constraints like length or style
 
 ---
-@uri local:code-review-001
+@id local:code-review-001
 
 def add(a, b): return a + b
 <<< approved; simple and correct, no changes needed

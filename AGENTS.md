@@ -1,4 +1,4 @@
-# Writing MarkBack (.mb) Files
+# Writing MarkBack V2 (.mb) Files
 
 MarkBack pairs content with single-line feedback using `<<<` as the delimiter.
 
@@ -12,53 +12,80 @@ Some content here.
 ## Record with headers
 
 ```
-@uri local:item-001
+@id item-001
 @by reviewer@example.com
-@source ./file.txt
-@prior ./prompt.txt
+@file ./file.txt
+@input ./prompt.txt
+@tag review p1
 
 Inline content goes here.
 <<< good; quality=high
 ```
 
-Headers: `@uri`, `@by`, `@source`, `@prior`. All optional. Order: uri, by, prior, source.
+Headers: `@id`, `@by`, `@tag`, `@input`, `@file`. All optional. Order: id, by, tag, input, file.
 
 ## Rules
 
 - `<<<` must be followed by one space then feedback text — all on one line
 - A blank line is **required** between headers and inline content
-- When `@source` is present, there must be **no** inline content
+- `@file` + inline content can coexist (file is provenance, content is snapshot)
 - Records in multi-record files are separated by `---`
 - Files must be UTF-8 with LF line endings
+- `@id` values are plain strings (no URI validation)
 
 ## Compact format (one record per line)
 
 ```
-@source ./images/001.jpg <<< approved; scene=beach
-@source ./images/002.jpg <<< rejected; too dark
+@file ./images/001.jpg <<< approved; scene=beach
+@file ./images/002.jpg <<< rejected; too dark
 ```
 
-No `---` separator needed between compact records. `@uri` can go on the line above:
+No `---` separator needed between compact records. `@id` can go on the line above:
 
 ```
-@uri local:item-001
-@source ./file.txt <<< good
+@id item-001
+@file ./file.txt <<< good
 ```
 
 ## Multi-record file
 
 ```
-@uri local:first
+@id first
 
 First content.
 <<< positive
 
 ---
-@uri local:second
+@id second
 
 Second content.
 <<< negative; needs work
 ```
+
+## File-level headers (% prefix)
+
+```
+%markback 2
+%scope issue-A issue-B
+%covers ./gen/batch3/*.txt
+
+@file ./gen/batch3/file2.txt <<< issue-B; tone is off
+```
+
+- `%markback 2` — version declaration
+- `%scope` — what issues are being checked (sweep pattern)
+- `%covers` — glob of all files reviewed (absence = clean for scope)
+
+## Tags
+
+```
+@id item-001
+@tag training positive-examples batch-2024-03
+@file ./data/example.txt
+<<< approved
+```
+
+Space-separated. Multiple `@tag` lines merge.
 
 ## Feedback format
 
@@ -74,32 +101,35 @@ Feedback is freeform text. Optional structured convention:
 
 Segments are separated by `; ` (semicolon + space). Segments with `=` are key-value attributes; without are labels or comments.
 
-## Paired files
+## Sidecar files
 
-Content in `name.ext`, feedback in `name.label.txt` (or `.feedback.txt` or `.mb`):
+Content in `name.ext`, annotation in `name.ext.mb`:
 
-**essay.txt** — the content
-**essay.label.txt:**
+**report.pdf** — the content
+**report.pdf.mb:**
 ```
-@uri local:essay-001
+@id report-001
 <<< good; grade=B+
 ```
 
 ## Line/character ranges
 
-`@source` and `@prior` support position references:
+`@file` and `@input` support position references:
 
 ```
-@source ./code.py:42          ← line 42
-@source ./code.py:42-50       ← lines 42–50
-@source ./code.py:10:5-15:20  ← line 10 col 5 to line 15 col 20
+@file ./code.py:42          ← line 42
+@file ./code.py:42-50       ← lines 42–50
+@file ./code.py:10:5-15:20  ← line 10 col 5 to line 15 col 20
 ```
+
+## V1 backward compatibility
+
+V1 headers (`@uri`, `@source`, `@prior`) are automatically mapped to V2 (`@id`, `@file`, `@input`) with a W010 warning.
 
 ## Quick checklist
 
 - [ ] Every record has exactly one `<<<` line
 - [ ] Feedback is a single line (no newlines)
 - [ ] Blank line before inline content
-- [ ] No inline content when `@source` is present
 - [ ] `---` between full records; not needed between compact records
 - [ ] File ends with a newline

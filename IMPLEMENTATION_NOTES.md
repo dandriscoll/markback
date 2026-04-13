@@ -1,119 +1,79 @@
-# Implementation Notes
+# Implementation Notes — MarkBack V2
+
+## V1 → V2 Changes
+
+### Header Renames
+- `@uri` → `@id` (plain string, no URI validation)
+- `@source` → `@file` (the content being annotated)
+- `@prior` → `@input` (what produced the content)
+
+### New Features
+- `@tag` header — space-separated tags for categorization
+- `%markback 2` — optional version declaration
+- `%scope` / `%covers` — sweep pattern (meaningful absence)
+- `@file` + inline content can coexist (file is provenance, content is snapshot)
+- Sidecar convention simplified to `name.ext.mb` only
+
+### Removed
+- LLM workflow layer (`llm.py`, `workflow.py`) — not core to MarkBack
+- `httpx` dependency
+- `LLMConfig` from config
+- RFC 3986 URI validation on `@id`
+- E003 (malformed URI) no longer emitted
+- E005 (content with @source) no longer emitted — coexistence is valid
+- `.label.txt` / `.feedback.txt` as primary sidecar convention (kept as V1 legacy in discovery)
+
+### API Changes
+- `SourceRef` → `FileRef` (alias preserved)
+- `Record` fields: `uri→id`, `source→file`, `prior→input`, added `tags`
+- New `write()` / `append()` / `write_string()` functions
+- New `normalize()` function
+- New `discover_sidecars()` function
+- `ParseResult` gains `scope`, `covers`, `version`, `covered_files()`
+- V1 compat aliases preserved for all renamed functions
 
 ## Design Decisions
 
 ### Parser Architecture
+Same state-machine approach as V1. Now also handles:
+- File-level `%` headers (parsed before records, must be at top of file)
+- V1 header mapping (detected by keyword, mapped with W010 warning)
+- `@tag` with whitespace splitting and merge across multiple lines
 
-The parser uses a state-machine approach, processing lines sequentially and classifying each line into one of:
-- `COMPACT_RECORD` - `@source ... <<<` on one line
-- `HEADER` - `@keyword value`
-- `FEEDBACK` - `<<< ...`
-- `SEPARATOR` - `---`
-- `BLANK` - empty line
-- `CONTENT` - anything else
+### V1 Backward Compatibility
+The parser transparently reads V1 files:
+1. `@uri` → mapped to `record.id`
+2. `@source` → mapped to `record.file`
+3. `@prior` → mapped to `record.input`
+4. `@source ... <<<` compact → handled alongside `@file ... <<<`
+5. Each V1 header emits W010 warning
 
-This allows handling all format variants (single, multi, compact, paired) with the same core logic.
+### Sweep Pattern
+`%scope` + `%covers` enable "meaningful absence":
+- `%scope` declares what issues are being checked
+- `%covers` declares the complete file set under review
+- Files matching `%covers` with no record are implicitly clean for all scope items
+- `ParseResult.covered_files()` resolves the glob for programmatic access
 
-**Tradeoff:** The parser is single-pass but accumulates state. An alternative two-pass approach (first split on separators, then parse each segment) was considered but rejected because compact records don't require separators.
+### Writer Simplification
+V1 had 5+ writer functions. V2 has:
+- `write()` — write records to a file (auto-format)
+- `append()` — add a record to existing file
+- `write_string()` — write records to string
+- `normalize()` — canonical rewrite
+All V1 functions preserved as aliases.
 
-### Feedback Parsing
-
-Feedback parsing supports three modes:
-1. **Raw** - Return the feedback string as-is
-2. **Structured** - Parse into label, attributes, and comment
-3. **JSON** - Parse `json:{...}` prefixed feedback
-
-The structured parser splits on `; ` (semicolon + space) and classifies segments:
-- Segments with `=` are key-value attributes
-- First non-attribute segment is the label
-- Subsequent non-attribute segments become the comment
-
-**Tradeoff:** This heuristic-based parsing may occasionally misclassify freeform text that happens to contain `=`. A stricter approach would require escaping, but that conflicts with the "easy to type" design goal.
-
-### Compact Record Detection
-
-A line is classified as a compact record if it:
-1. Starts with `@source`
-2. Contains `<<<`
-
-This is done before checking if it's a regular header to ensure compact records are handled correctly.
-
-**Edge case:** A `@source` path containing `<<<` would be misinterpreted. This is documented as a limitation - paths should not contain the feedback delimiter.
-
-### Paired File Discovery
-
-Paired files are discovered by:
-1. Finding all files in a directory
-2. Identifying label files by suffix (`.label.txt`, `.feedback.txt`, `.mb`)
-3. Matching content files to label files by basename
-
-**Tradeoff:** This simple approach doesn't handle nested directories or complex naming patterns. A future version could support glob patterns or manifest files.
-
-### Writer Canonical Format
-
-The writer produces deterministic output by:
-1. Normalizing line endings to LF
-2. Ordering headers (`@uri` before `@source`)
-3. Trimming trailing whitespace
-4. Using compact format for source-only records when `prefer_compact=True`
-
-**Tradeoff:** The compact format preference is configurable because some users may prefer the more explicit full format even for simple records.
-
-### LLM Abstraction
-
-The `LLMClient` abstraction supports:
-- OpenAI-compatible APIs (most common)
-- Mock client for testing
-
-The factory pattern allows injecting mock clients during tests without modifying the workflow code.
-
-**Tradeoff:** Only synchronous HTTP is supported. Async support was considered but adds complexity without clear benefit for the typical use case (small datasets, infrequent calls).
-
-### Evaluation Heuristics
-
-The v1 evaluation uses simple heuristics:
-- Parse the expected feedback for a label
-- Check if the label is in `positive_labels` or `negative_labels`
-- Look for sentiment indicators in the operator output
-
-**Tradeoff:** This is intentionally simple and deterministic. A more sophisticated approach would use an LLM for evaluation, but that adds cost and non-determinism. The simple approach is easy to test and understand.
-
-### File Mode Handling
-
-Two modes are supported:
-- **git** - Modify files in place (suitable for version-controlled projects)
-- **versioned** - Never overwrite, create timestamped versions
-
-**Tradeoff:** The versioned mode uses timestamps rather than sequential numbers. This ensures uniqueness without needing to scan existing files, but timestamps can be less intuitive for ordering.
-
-## Known Limitations
-
-1. **Path restrictions:** Source paths cannot contain the `<<<` delimiter
-2. **Binary content:** Binary files are referenced but not embedded
-3. **Encoding:** Only UTF-8 is supported
-4. **Line classification:** Content cannot start with `@source ... <<<` on the first line after headers without a blank line
-5. **Evaluation:** Simple heuristic-based, not semantic understanding
+### Sidecar Convention
+V2: `name.ext.mb` (append `.mb` to the full filename)
+V1 legacy: `.label.txt`, `.feedback.txt` still discovered for backward compat
 
 ## Testing Strategy
 
 ### Unit Tests
-- Parser tests cover all format variants from the spec
-- Writer tests verify roundtrip stability
-- Linter tests cover all error and warning codes
-- Type tests verify core data structures
-
-### Integration Tests
-- CLI tests use Typer's test runner
-- Workflow tests use mock LLM clients
-- File operations use temporary directories
+- Parser tests cover V2 format, V1 backward compat, file-level headers, tags, sweep pattern
+- Writer tests cover canonical output, version headers, scope/covers, round-trip
+- Linter tests verify all error/warning codes with V2 semantics
+- Type tests verify FileRef, Record with new fields, V1 compat aliases
 
 ### Fixtures
-All spec examples are included as test fixtures to ensure the implementation matches the specification.
-
-## Future Considerations
-
-1. **Async HTTP:** Could improve throughput for large datasets
-2. **Streaming parser:** For very large files
-3. **Diff output:** Show what normalization changed
-4. **Watch mode:** Auto-lint on file changes
-5. **IDE integration:** LSP server for real-time linting
+All fixtures updated to V2 format. Error fixtures updated to reflect V2 semantics (e.g., content_with_source is now valid).

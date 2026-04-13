@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "markback"
-version = "0.1.5"
+version = "0.2.0"
 description = "A compact, human-writable format for storing content paired with feedback/labels"
 readme = "README.md"
 license = "MIT"
@@ -30,7 +30,6 @@ dependencies = [
     "typer>=0.9.0",
     "rich>=13.0.0",
     "python-dotenv>=1.0.0",
-    "httpx>=0.25.0",
 ]
 
 [project.urls]

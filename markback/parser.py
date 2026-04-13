@@ -1,29 +1,35 @@
-"""MarkBack parser implementation."""
+"""MarkBack V2 parser implementation."""
 
 import re
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urlparse
 
 from .types import (
     Diagnostic,
     ErrorCode,
+    FileRef,
     ParseResult,
     Record,
     Severity,
-    SourceRef,
     WarningCode,
 )
 
 
-# Known header keywords
-KNOWN_HEADERS = {"uri", "by", "source", "prior"}
+# V2 known header keywords
+KNOWN_HEADERS = {"id", "by", "file", "input", "tag"}
+
+# V1 header mapping for backward compatibility
+V1_HEADER_MAP = {"uri": "id", "source": "file", "prior": "input"}
 
 # Patterns
 HEADER_PATTERN = re.compile(r"^@([a-z]+)\s+(.+)$")
 FEEDBACK_DELIMITER = "<<<"
 RECORD_SEPARATOR = "---"
-COMPACT_PATTERN = re.compile(r"^@source\s+(.+?)\s+<<<\s+(.*)$")
+COMPACT_PATTERN = re.compile(r"^@file\s+(.+?)\s+<<<\s+(.*)$")
+V1_COMPACT_PATTERN = re.compile(r"^@source\s+(.+?)\s+<<<\s+(.*)$")
+
+# File-level header pattern (% prefix)
+FILE_HEADER_PATTERN = re.compile(r"^%([a-z]+)\s*(.*)$")
 
 
 class LineType:
@@ -34,23 +40,27 @@ class LineType:
     SEPARATOR = "separator"
     BLANK = "blank"
     CONTENT = "content"
+    FILE_HEADER = "file_header"
 
 
 def classify_line(line: str) -> str:
     """Classify a line according to MarkBack grammar."""
     stripped = line.rstrip()
 
-    # Blank line
     if not stripped:
         return LineType.BLANK
 
-    # Record separator
     if stripped == RECORD_SEPARATOR:
         return LineType.SEPARATOR
 
-    # Compact record: @source ... <<<
-    if stripped.startswith("@source") and FEEDBACK_DELIMITER in stripped:
-        return LineType.COMPACT_RECORD
+    # File-level headers: %markback, %scope, %covers
+    if stripped.startswith("%"):
+        return LineType.FILE_HEADER
+
+    # Compact record: @file ... <<< or @source ... <<< (V1)
+    if FEEDBACK_DELIMITER in stripped:
+        if stripped.startswith("@file") or stripped.startswith("@source"):
+            return LineType.COMPACT_RECORD
 
     # Header: @keyword value
     if stripped.startswith("@"):
@@ -60,7 +70,6 @@ def classify_line(line: str) -> str:
     if stripped.startswith(FEEDBACK_DELIMITER):
         return LineType.FEEDBACK
 
-    # Everything else is content
     return LineType.CONTENT
 
 
@@ -73,28 +82,21 @@ def parse_header(line: str) -> tuple[Optional[str], Optional[str], Optional[str]
     return match.group(1), match.group(2), None
 
 
-def validate_uri(uri: str) -> Optional[str]:
-    """Validate a URI. Returns error message if invalid."""
-    try:
-        result = urlparse(uri)
-        # Must have a scheme
-        if not result.scheme:
-            return f"URI missing scheme: {uri}"
-        return None
-    except Exception as e:
-        return f"Invalid URI: {uri} ({e})"
+def parse_compact_record(line: str) -> tuple[Optional[FileRef], Optional[str], Optional[str], bool]:
+    """Parse a compact record line. Returns (file_ref, feedback, error_message, is_v1)."""
+    stripped = line.rstrip()
 
+    # Try V2 format first
+    match = COMPACT_PATTERN.match(stripped)
+    if match:
+        return FileRef(match.group(1)), match.group(2), None, False
 
-def parse_compact_record(line: str) -> tuple[Optional[SourceRef], Optional[str], Optional[str]]:
-    """Parse a compact record line. Returns (source, feedback, error_message)."""
-    match = COMPACT_PATTERN.match(line.rstrip())
-    if not match:
-        return None, None, f"Invalid compact record syntax: {line}"
+    # Try V1 format
+    match = V1_COMPACT_PATTERN.match(stripped)
+    if match:
+        return FileRef(match.group(1)), match.group(2), None, True
 
-    source_path = match.group(1)
-    feedback = match.group(2)
-
-    return SourceRef(source_path), feedback, None
+    return None, None, f"Invalid compact record syntax: {line}", False
 
 
 def parse_string(
@@ -103,15 +105,19 @@ def parse_string(
 ) -> ParseResult:
     """Parse a MarkBack string into records.
 
-    Handles single-record, multi-record, and compact formats.
+    Handles V1 and V2 formats, single-record, multi-record, and compact formats.
     """
     lines = text.split('\n')
-    # Remove trailing empty line if present (from final newline)
     if lines and lines[-1] == '':
         lines = lines[:-1]
 
     records: list[Record] = []
     diagnostics: list[Diagnostic] = []
+
+    # File-level metadata
+    file_version: Optional[int] = None
+    file_scope: Optional[list[str]] = None
+    file_covers: Optional[str] = None
 
     def add_diagnostic(
         severity: Severity,
@@ -135,26 +141,28 @@ def parse_string(
     current_headers: dict[str, str] = {}
     current_content_lines: list[str] = []
     current_start_line: int = 1
-    pending_uri: Optional[str] = None  # For compact records with preceding @uri
+    pending_id: Optional[str] = None
     in_content: bool = False
     had_blank_line: bool = False
+    past_file_headers: bool = False
 
-    def finalize_record(feedback: str, end_line: int, is_compact: bool = False):
+    def finalize_record(feedback: str, end_line: int):
         """Create a record from current state."""
         nonlocal current_headers, current_content_lines, current_start_line
-        nonlocal pending_uri, in_content, had_blank_line
+        nonlocal pending_id, in_content, had_blank_line
 
-        uri = current_headers.get("uri") or pending_uri
+        record_id = current_headers.get("id") or pending_id
         by = current_headers.get("by")
-        source_str = current_headers.get("source")
-        source = SourceRef(source_str) if source_str else None
-        prior_str = current_headers.get("prior")
-        prior = SourceRef(prior_str) if prior_str else None
+        file_str = current_headers.get("file")
+        file_ref = FileRef(file_str) if file_str else None
+        input_str = current_headers.get("input")
+        input_ref = FileRef(input_str) if input_str else None
+        tag_str = current_headers.get("tag")
+        tags = tag_str.split() if tag_str else []
 
         content = None
         if current_content_lines:
             content = '\n'.join(current_content_lines)
-            # Trim leading/trailing blank lines from content
             content_lines = content.split('\n')
             while content_lines and not content_lines[0].strip():
                 content_lines.pop(0)
@@ -164,15 +172,15 @@ def parse_string(
 
         record = Record(
             feedback=feedback,
-            uri=uri,
+            id=record_id,
             by=by,
-            source=source,
-            prior=prior,
+            file=file_ref,
+            input=input_ref,
+            tags=tags,
             content=content,
             _source_file=source_file,
             _start_line=current_start_line,
             _end_line=end_line,
-            _is_compact=is_compact,
         )
         records.append(record)
 
@@ -180,14 +188,14 @@ def parse_string(
         current_headers = {}
         current_content_lines = []
         current_start_line = end_line + 1
-        pending_uri = None
+        pending_id = None
         in_content = False
         had_blank_line = False
 
     line_num = 0
     while line_num < len(lines):
         line = lines[line_num]
-        line_num += 1  # 1-indexed for diagnostics
+        line_num += 1
         line_type = classify_line(line)
 
         # Check for trailing whitespace
@@ -200,10 +208,49 @@ def parse_string(
                     line_num,
                 )
 
+        # File-level headers (must be at top of file, before any records)
+        if line_type == LineType.FILE_HEADER:
+            if past_file_headers:
+                # Treat as content if we're past the header section
+                in_content = True
+                current_content_lines.append(line)
+                continue
+
+            stripped = line.rstrip()
+            match = FILE_HEADER_PATTERN.match(stripped)
+            if match:
+                keyword = match.group(1)
+                value = match.group(2).strip()
+
+                if keyword == "markback":
+                    try:
+                        file_version = int(value)
+                    except ValueError:
+                        add_diagnostic(
+                            Severity.ERROR,
+                            ErrorCode.E006,
+                            f"Invalid version in %markback: {value}",
+                            line_num,
+                        )
+                elif keyword == "scope":
+                    file_scope = value.split() if value else []
+                elif keyword == "covers":
+                    file_covers = value if value else None
+                else:
+                    add_diagnostic(
+                        Severity.WARNING,
+                        WarningCode.W002,
+                        f"Unknown file-level header: %{keyword}",
+                        line_num,
+                    )
+            continue
+
+        # Once we see a non-file-header, non-blank line, we're past file headers
+        if line_type != LineType.BLANK:
+            past_file_headers = True
+
         if line_type == LineType.SEPARATOR:
-            # Record separator - finalize any pending record
             if current_headers or current_content_lines:
-                # Missing feedback
                 add_diagnostic(
                     Severity.ERROR,
                     ErrorCode.E001,
@@ -212,7 +259,7 @@ def parse_string(
                     record_idx=len(records),
                 )
             current_start_line = line_num + 1
-            pending_uri = None
+            pending_id = None
             in_content = False
             had_blank_line = False
             continue
@@ -225,8 +272,7 @@ def parse_string(
             continue
 
         if line_type == LineType.COMPACT_RECORD:
-            # Compact record: @source ... <<<
-            source, feedback, error = parse_compact_record(line)
+            file_ref, feedback, error, is_v1 = parse_compact_record(line)
             if error:
                 add_diagnostic(
                     Severity.ERROR,
@@ -236,6 +282,14 @@ def parse_string(
                 )
                 continue
 
+            if is_v1:
+                add_diagnostic(
+                    Severity.WARNING,
+                    WarningCode.W010,
+                    "V1 format detected: @source mapped to @file",
+                    line_num,
+                )
+
             if feedback is not None and not feedback:
                 add_diagnostic(
                     Severity.ERROR,
@@ -244,38 +298,36 @@ def parse_string(
                     line_num,
                 )
 
-            # Use any pending @uri from previous line and @by, @prior if present
-            uri = pending_uri or current_headers.get("uri")
+            record_id = pending_id or current_headers.get("id")
             by = current_headers.get("by")
-            prior_str = current_headers.get("prior")
-            prior = SourceRef(prior_str) if prior_str else None
+            input_str = current_headers.get("input")
+            input_ref = FileRef(input_str) if input_str else None
+            tag_str = current_headers.get("tag")
+            tags = tag_str.split() if tag_str else []
 
             record = Record(
                 feedback=feedback or "",
-                uri=uri,
+                id=record_id,
                 by=by,
-                source=source,
-                prior=prior,
+                file=file_ref,
+                input=input_ref,
+                tags=tags,
                 content=None,
                 _source_file=source_file,
                 _start_line=current_start_line,
                 _end_line=line_num,
-                _is_compact=True,
             )
             records.append(record)
 
-            # Reset state
             current_headers = {}
             current_content_lines = []
             current_start_line = line_num + 1
-            pending_uri = None
+            pending_id = None
             in_content = False
             had_blank_line = False
             continue
 
         if line_type == LineType.HEADER:
-            # If we've seen a blank line, treat @-starting lines as content
-            # (content that starts with @ requires the blank line separator)
             if had_blank_line or in_content:
                 in_content = True
                 current_content_lines.append(line)
@@ -291,6 +343,17 @@ def parse_string(
                 )
                 continue
 
+            # V1 backward compat: map old header names
+            if keyword in V1_HEADER_MAP:
+                new_keyword = V1_HEADER_MAP[keyword]
+                add_diagnostic(
+                    Severity.WARNING,
+                    WarningCode.W010,
+                    f"V1 format detected: @{keyword} mapped to @{new_keyword}",
+                    line_num,
+                )
+                keyword = new_keyword
+
             if keyword not in KNOWN_HEADERS:
                 add_diagnostic(
                     Severity.WARNING,
@@ -299,24 +362,17 @@ def parse_string(
                     line_num,
                 )
 
-            if keyword == "uri":
-                uri_error = validate_uri(value)
-                if uri_error:
-                    add_diagnostic(
-                        Severity.ERROR,
-                        ErrorCode.E003,
-                        uri_error,
-                        line_num,
-                    )
-                # Check if next non-blank line is compact record
-                # Store as pending_uri for potential compact record
-                pending_uri = value
+            if keyword == "id":
+                pending_id = value
 
-            current_headers[keyword] = value
+            # Merge tags if multiple @tag lines
+            if keyword == "tag" and "tag" in current_headers:
+                current_headers["tag"] = current_headers["tag"] + " " + value
+            else:
+                current_headers[keyword] = value
             continue
 
         if line_type == LineType.FEEDBACK:
-            # Extract feedback content
             stripped = line.rstrip()
             if stripped == FEEDBACK_DELIMITER:
                 add_diagnostic(
@@ -329,20 +385,7 @@ def parse_string(
             elif stripped.startswith(FEEDBACK_DELIMITER + " "):
                 feedback = stripped[len(FEEDBACK_DELIMITER) + 1:]
             else:
-                # <<< with content but no space - try to parse anyway
                 feedback = stripped[len(FEEDBACK_DELIMITER):].lstrip()
-
-            # Check for content when @source is present
-            if current_headers.get("source") and current_content_lines:
-                content_text = '\n'.join(current_content_lines).strip()
-                if content_text:
-                    add_diagnostic(
-                        Severity.ERROR,
-                        ErrorCode.E005,
-                        "Content present when @source specified",
-                        current_start_line,
-                        record_idx=len(records),
-                    )
 
             # Check for missing blank line before content that starts with @
             if current_content_lines and not had_blank_line:
@@ -374,28 +417,28 @@ def parse_string(
             record_idx=len(records),
         )
 
-    # Check for duplicate URIs
-    seen_uris: dict[str, int] = {}
+    # Check for duplicate IDs
+    seen_ids: dict[str, int] = {}
     for idx, record in enumerate(records):
-        if record.uri:
-            if record.uri in seen_uris:
+        if record.id:
+            if record.id in seen_ids:
                 add_diagnostic(
                     Severity.WARNING,
                     WarningCode.W001,
-                    f"Duplicate URI: {record.uri} (first seen in record {seen_uris[record.uri]})",
+                    f"Duplicate ID: {record.id} (first seen in record {seen_ids[record.id]})",
                     record._start_line,
                     record_idx=idx,
                 )
             else:
-                seen_uris[record.uri] = idx
+                seen_ids[record.id] = idx
 
-    # Check for missing URIs
+    # Check for missing IDs
     for idx, record in enumerate(records):
-        if not record.uri:
+        if not record.id:
             add_diagnostic(
                 Severity.WARNING,
                 WarningCode.W006,
-                "Missing @uri (record has no identifier)",
+                "Missing @id (record has no identifier)",
                 record._start_line,
                 record_idx=idx,
             )
@@ -404,11 +447,15 @@ def parse_string(
         records=records,
         diagnostics=diagnostics,
         source_file=source_file,
+        scope=file_scope,
+        covers=file_covers,
+        version=file_version,
     )
 
 
 def parse_file(path: Path) -> ParseResult:
     """Parse a MarkBack file."""
+    path = Path(path)
     try:
         text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
@@ -430,165 +477,75 @@ def parse_file(path: Path) -> ParseResult:
     return parse_string(text, source_file=path)
 
 
-def discover_paired_files(
+def discover_sidecars(
     directory: Path,
-    content_patterns: Optional[list[str]] = None,
-    label_suffixes: Optional[list[str]] = None,
-) -> list[tuple[Path, Optional[Path]]]:
-    """Discover content files and their paired label files.
+) -> list[tuple[Path, Path]]:
+    """Discover content files and their sidecar .mb annotation files.
 
-    Returns list of (content_file, label_file) tuples.
-    label_file may be None if not found.
+    V2 convention: content.ext -> content.ext.mb
+    V1 legacy: also checks .label.txt, .feedback.txt, basename.mb
+
+    Returns list of (content_file, sidecar_file) tuples.
     """
-    if label_suffixes is None:
-        label_suffixes = [".label.txt", ".feedback.txt", ".mb"]
+    directory = Path(directory)
+    if not directory.is_dir():
+        return []
 
-    if content_patterns is None:
-        content_patterns = ["*"]
+    pairs: list[tuple[Path, Path]] = []
+    all_files = set(directory.iterdir())
 
-    pairs: list[tuple[Path, Optional[Path]]] = []
-
-    # Find all files in directory
-    all_files = set(directory.iterdir()) if directory.is_dir() else set()
-
-    # Identify label files
-    label_files = set()
-    for f in all_files:
-        for suffix in label_suffixes:
-            if f.name.endswith(suffix):
-                label_files.add(f)
-                break
-
-    # Content files are everything else (excluding label files and hidden files)
-    content_files = [
+    # Identify sidecar .mb files (files ending in .ext.mb where .ext.mb content exists)
+    mb_files = {f for f in all_files if f.is_file() and f.name.endswith(".mb")}
+    v1_label_files = {
         f for f in all_files
-        if f.is_file()
-        and f not in label_files
-        and not f.name.startswith(".")
-    ]
+        if f.is_file() and (f.name.endswith(".label.txt") or f.name.endswith(".feedback.txt"))
+    }
 
-    for content_file in content_files:
-        # Look for corresponding label file
-        label_file = None
-        basename = content_file.stem  # filename without extension
+    # V2: name.ext.mb -> name.ext
+    for mb_file in mb_files:
+        # Strip the .mb suffix to get potential content file name
+        content_name = mb_file.name[:-3]  # Remove .mb
+        if not content_name:
+            continue
+        content_file = directory / content_name
+        if content_file.exists() and content_file.is_file() and content_file not in mb_files:
+            pairs.append((content_file, mb_file))
 
-        for suffix in label_suffixes:
-            candidate = directory / (basename + suffix)
-            if candidate.exists():
-                label_file = candidate
+    # V1 legacy: .label.txt and .feedback.txt
+    for label_file in v1_label_files:
+        if label_file.name.endswith(".label.txt"):
+            basename = label_file.name[:-len(".label.txt")]
+        else:
+            basename = label_file.name[:-len(".feedback.txt")]
+
+        # Find matching content file
+        for f in all_files:
+            if f.is_file() and f.stem == basename and f not in mb_files and f not in v1_label_files:
+                pairs.append((f, label_file))
                 break
-
-            # Also try with full name (for extensionless files)
-            candidate = directory / (content_file.name + suffix)
-            if candidate.exists():
-                label_file = candidate
-                break
-
-        pairs.append((content_file, label_file))
 
     return pairs
 
 
-def parse_paired_files(
-    content_file: Path,
-    label_file: Path,
-) -> ParseResult:
-    """Parse a paired content + label file combination."""
-    diagnostics: list[Diagnostic] = []
-
-    # Parse the label file
-    label_result = parse_file(label_file)
-    diagnostics.extend(label_result.diagnostics)
-
-    if not label_result.records:
-        return ParseResult(
-            records=[],
-            diagnostics=diagnostics,
-            source_file=label_file,
-        )
-
-    # In paired mode, the label file should have exactly one record
-    # with no inline content (content comes from the paired file)
-    record = label_result.records[0]
-
-    # Set the source to the content file
-    if record.source is None:
-        record.source = SourceRef(str(content_file))
-
-    # The content should come from the content file
-    if record.content:
-        diagnostics.append(Diagnostic(
-            file=label_file,
-            line=record._start_line,
-            column=None,
-            severity=Severity.WARNING,
-            code=WarningCode.W008,
-            message="Paired label file should not contain inline content",
-        ))
-
-    # Load content from content file if it's text
-    try:
-        record.content = content_file.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        # Binary file - leave content as None, source points to file
-        record.content = None
-
-    record._source_file = label_file
-
-    return ParseResult(
-        records=[record],
-        diagnostics=diagnostics,
-        source_file=label_file,
-    )
+# V1 backward compatibility aliases
+discover_paired_files = discover_sidecars
 
 
 def parse_directory(
     directory: Path,
-    label_suffixes: Optional[list[str]] = None,
     recursive: bool = False,
 ) -> ParseResult:
-    """Parse all MarkBack files in a directory.
-
-    Handles both standalone .mb files and paired file mode.
-    """
-    if label_suffixes is None:
-        label_suffixes = [".label.txt", ".feedback.txt", ".mb"]
-
+    """Parse all MarkBack files in a directory."""
+    directory = Path(directory)
     all_records: list[Record] = []
     all_diagnostics: list[Diagnostic] = []
 
-    # Find all .mb files (standalone MarkBack files)
     mb_files = list(directory.glob("**/*.mb" if recursive else "*.mb"))
 
     for mb_file in mb_files:
-        # Check if this is a label file (paired mode)
-        is_label_file = False
-        for suffix in label_suffixes:
-            if mb_file.name.endswith(suffix) and suffix != ".mb":
-                is_label_file = True
-                break
-
-        if not is_label_file:
-            result = parse_file(mb_file)
-            all_records.extend(result.records)
-            all_diagnostics.extend(result.diagnostics)
-
-    # Find paired files
-    pairs = discover_paired_files(directory, label_suffixes=label_suffixes)
-    for content_file, label_file in pairs:
-        if label_file:
-            result = parse_paired_files(content_file, label_file)
-            all_records.extend(result.records)
-            all_diagnostics.extend(result.diagnostics)
-        else:
-            all_diagnostics.append(Diagnostic(
-                file=content_file,
-                line=None,
-                column=None,
-                severity=Severity.WARNING,
-                code=WarningCode.W007,
-                message=f"Paired feedback file not found for {content_file.name}",
-            ))
+        result = parse_file(mb_file)
+        all_records.extend(result.records)
+        all_diagnostics.extend(result.diagnostics)
 
     return ParseResult(
         records=all_records,

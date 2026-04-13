@@ -14,31 +14,37 @@ function normalizeContentLines(content: string): string[] {
 export function writeRecordCanonical(record: Record, preferCompact = true): string {
   const lines: string[] = [];
 
-  const useCompact = preferCompact && record.source !== null && !record.hasInlineContent();
+  const useCompact = preferCompact && record.file !== null && !record.hasInlineContent();
 
   if (useCompact) {
-    if (record.uri) {
-      lines.push(`@uri ${record.uri}`);
+    if (record.id) {
+      lines.push(`@id ${record.id}`);
     }
     if (record.by) {
       lines.push(`@by ${record.by}`);
     }
-    if (record.prior) {
-      lines.push(`@prior ${record.prior}`);
+    if (record.tags.length > 0) {
+      lines.push(`@tag ${record.tags.join(" ")}`);
     }
-    lines.push(`@source ${record.source} <<< ${record.feedback}`);
+    if (record.input) {
+      lines.push(`@input ${record.input}`);
+    }
+    lines.push(`@file ${record.file} <<< ${record.feedback}`);
   } else {
-    if (record.uri) {
-      lines.push(`@uri ${record.uri}`);
+    if (record.id) {
+      lines.push(`@id ${record.id}`);
     }
     if (record.by) {
       lines.push(`@by ${record.by}`);
     }
-    if (record.prior) {
-      lines.push(`@prior ${record.prior}`);
+    if (record.tags.length > 0) {
+      lines.push(`@tag ${record.tags.join(" ")}`);
     }
-    if (record.source) {
-      lines.push(`@source ${record.source}`);
+    if (record.input) {
+      lines.push(`@input ${record.input}`);
+    }
+    if (record.file) {
+      lines.push(`@file ${record.file}`);
     }
 
     if (record.hasInlineContent() && record.content !== null) {
@@ -61,7 +67,7 @@ export function writeRecordsMulti(records: Record[], preferCompact = true): stri
   let prevWasCompact = false;
 
   records.forEach((record, index) => {
-    const isCompact = preferCompact && record.source !== null && !record.hasInlineContent();
+    const isCompact = preferCompact && record.file !== null && !record.hasInlineContent();
 
     if (index > 0) {
       if (isCompact && prevWasCompact) {
@@ -76,4 +82,45 @@ export function writeRecordsMulti(records: Record[], preferCompact = true): stri
   });
 
   return resultParts.join("") + "\n";
+}
+
+export function writeString(
+  records: Record[],
+  options: {
+    compact?: boolean;
+    scope?: string[] | null;
+    covers?: string | null;
+    versionHeader?: boolean;
+  } = {},
+): string {
+  const versionHeader = options.versionHeader ?? true;
+  const scope = options.scope ?? null;
+  const covers = options.covers ?? null;
+
+  if (records.length === 0 && !scope && !covers) {
+    return "";
+  }
+
+  const parts: string[] = [];
+
+  // File-level headers
+  if (versionHeader) {
+    parts.push("%markback 2");
+  }
+  if (scope && scope.length > 0) {
+    parts.push(`%scope ${scope.join(" ")}`);
+  }
+  if (covers) {
+    parts.push(`%covers ${covers}`);
+  }
+
+  if (parts.length > 0) {
+    parts.push("");
+  }
+
+  if (records.length > 0) {
+    parts.push(writeRecordsMulti(records));
+  }
+
+  return parts.join("\n");
 }

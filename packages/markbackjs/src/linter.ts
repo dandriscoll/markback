@@ -56,12 +56,10 @@ function lintFeedbackStructured(
       escaped = false;
       continue;
     }
-
     if (char === "\\") {
       escaped = true;
       continue;
     }
-
     if (char === '"') {
       inQuote = !inQuote;
     }
@@ -84,12 +82,12 @@ function lintFeedbackStructured(
   return diagnostics;
 }
 
-function lintSourceExists(record: MarkbackRecord, basePath: string | null, recordIdx: number): Diagnostic[] {
+function lintFileExists(record: MarkbackRecord, basePath: string | null, recordIdx: number): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
 
-  if (record.source && !record.source.isUri) {
+  if (record.file && !record.file.isUri) {
     try {
-      const resolved = record.source.resolve(basePath);
+      const resolved = record.file.resolve(basePath);
       if (!fs.existsSync(resolved)) {
         diagnostics.push(
           new Diagnostic({
@@ -98,7 +96,7 @@ function lintSourceExists(record: MarkbackRecord, basePath: string | null, recor
             column: null,
             severity: Severity.WARNING,
             code: WarningCode.W003,
-            message: `@source file not found: ${record.source}`,
+            message: `@file not found: ${record.file}`,
             recordIndex: recordIdx,
           }),
         );
@@ -111,12 +109,12 @@ function lintSourceExists(record: MarkbackRecord, basePath: string | null, recor
   return diagnostics;
 }
 
-function lintPriorExists(record: MarkbackRecord, basePath: string | null, recordIdx: number): Diagnostic[] {
+function lintInputExists(record: MarkbackRecord, basePath: string | null, recordIdx: number): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
 
-  if (record.prior && !record.prior.isUri) {
+  if (record.input && !record.input.isUri) {
     try {
-      const resolved = record.prior.resolve(basePath);
+      const resolved = record.input.resolve(basePath);
       if (!fs.existsSync(resolved)) {
         diagnostics.push(
           new Diagnostic({
@@ -125,7 +123,7 @@ function lintPriorExists(record: MarkbackRecord, basePath: string | null, record
             column: null,
             severity: Severity.WARNING,
             code: WarningCode.W009,
-            message: `@prior file not found: ${record.prior}`,
+            message: `@input not found: ${record.input}`,
             recordIndex: recordIdx,
           }),
         );
@@ -143,18 +141,18 @@ interface PositionCheck {
   errorMsg: string;
 }
 
-function isPositionInvalid(sourceRef: { startLine: number | null; endLine: number | null; startColumn: number | null; endColumn: number | null }): PositionCheck {
-  if (sourceRef.startLine === null || sourceRef.endLine === null) {
+function isPositionInvalid(ref: { startLine: number | null; endLine: number | null; startColumn: number | null; endColumn: number | null }): PositionCheck {
+  if (ref.startLine === null || ref.endLine === null) {
     return { isInvalid: false, errorMsg: "" };
   }
 
-  if (sourceRef.endLine < sourceRef.startLine) {
-    return { isInvalid: true, errorMsg: `end line ${sourceRef.endLine} is less than start line ${sourceRef.startLine}` };
+  if (ref.endLine < ref.startLine) {
+    return { isInvalid: true, errorMsg: `end line ${ref.endLine} is less than start line ${ref.startLine}` };
   }
 
-  if (sourceRef.endLine === sourceRef.startLine) {
-    if (sourceRef.startColumn !== null && sourceRef.endColumn !== null && sourceRef.endColumn < sourceRef.startColumn) {
-      return { isInvalid: true, errorMsg: `end column ${sourceRef.endColumn} is less than start column ${sourceRef.startColumn} on line ${sourceRef.startLine}` };
+  if (ref.endLine === ref.startLine) {
+    if (ref.startColumn !== null && ref.endColumn !== null && ref.endColumn < ref.startColumn) {
+      return { isInvalid: true, errorMsg: `end column ${ref.endColumn} is less than start column ${ref.startColumn} on line ${ref.startLine}` };
     }
   }
 
@@ -164,9 +162,8 @@ function isPositionInvalid(sourceRef: { startLine: number | null; endLine: numbe
 function lintLineRange(record: MarkbackRecord, recordIdx: number): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
 
-  // Check @source range
-  if (record.source && record.source.startLine !== null) {
-    const { isInvalid, errorMsg } = isPositionInvalid(record.source);
+  if (record.file && record.file.startLine !== null) {
+    const { isInvalid, errorMsg } = isPositionInvalid(record.file);
     if (isInvalid) {
       diagnostics.push(
         new Diagnostic({
@@ -175,16 +172,15 @@ function lintLineRange(record: MarkbackRecord, recordIdx: number): Diagnostic[] 
           column: null,
           severity: Severity.ERROR,
           code: ErrorCode.E011,
-          message: `Invalid range in @source: ${errorMsg}`,
+          message: `Invalid range in @file: ${errorMsg}`,
           recordIndex: recordIdx,
         }),
       );
     }
   }
 
-  // Check @prior range
-  if (record.prior && record.prior.startLine !== null) {
-    const { isInvalid, errorMsg } = isPositionInvalid(record.prior);
+  if (record.input && record.input.startLine !== null) {
+    const { isInvalid, errorMsg } = isPositionInvalid(record.input);
     if (isInvalid) {
       diagnostics.push(
         new Diagnostic({
@@ -193,7 +189,7 @@ function lintLineRange(record: MarkbackRecord, recordIdx: number): Diagnostic[] 
           column: null,
           severity: Severity.ERROR,
           code: ErrorCode.E011,
-          message: `Invalid range in @prior: ${errorMsg}`,
+          message: `Invalid range in @input: ${errorMsg}`,
           recordIndex: recordIdx,
         }),
       );
@@ -261,11 +257,10 @@ export function lintString(text: string, options: LintOptions = {}): ParseResult
 
     if (checkSources) {
       const basePath = sourceFile ? path.dirname(sourceFile) : null;
-      result.diagnostics.push(...lintSourceExists(record, basePath, idx));
-      result.diagnostics.push(...lintPriorExists(record, basePath, idx));
+      result.diagnostics.push(...lintFileExists(record, basePath, idx));
+      result.diagnostics.push(...lintInputExists(record, basePath, idx));
     }
 
-    // Check line range validity
     result.diagnostics.push(...lintLineRange(record, idx));
   });
 
@@ -282,39 +277,11 @@ export function lintFile(filePath: string, options: Omit<LintOptions, "sourceFil
     return lintString(text, { ...options, sourceFile: filePath });
   } catch (err) {
     if (err && typeof err === "object" && "code" in err && err.code === "ENOENT") {
-      return new ParseResult(
-        [],
-        [
-          new Diagnostic({
-            file: filePath,
-            line: null,
-            column: null,
-            severity: Severity.ERROR,
-            code: ErrorCode.E006,
-            message: "File not found",
-          }),
-        ],
-        filePath,
-      );
+      return new ParseResult([], [new Diagnostic({ file: filePath, line: null, column: null, severity: Severity.ERROR, code: ErrorCode.E006, message: "File not found" })], filePath);
     }
-
     if (err && typeof err === "object" && "code" in err && err.code === "ERR_INVALID_UTF8") {
-      return new ParseResult(
-        [],
-        [
-          new Diagnostic({
-            file: filePath,
-            line: null,
-            column: null,
-            severity: Severity.ERROR,
-            code: ErrorCode.E006,
-            message: "File is not valid UTF-8",
-          }),
-        ],
-        filePath,
-      );
+      return new ParseResult([], [new Diagnostic({ file: filePath, line: null, column: null, severity: Severity.ERROR, code: ErrorCode.E006, message: "File is not valid UTF-8" })], filePath);
     }
-
     throw err;
   }
 }
@@ -351,11 +318,6 @@ export function lintFiles(paths: string[], options: Omit<LintOptions, "sourceFil
       const files = walkFiles(inputPath).sort();
       for (const file of files) {
         if (file.endsWith(".mb")) {
-          results.push(lintFile(file, options));
-        }
-      }
-      for (const file of files) {
-        if (file.endsWith(".label.txt") || file.endsWith(".feedback.txt")) {
           results.push(lintFile(file, options));
         }
       }

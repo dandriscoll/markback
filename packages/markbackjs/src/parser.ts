@@ -1,11 +1,14 @@
-import { Diagnostic, ErrorCode, ParseResult, Record as MarkbackRecord, Severity, SourceRef, WarningCode } from "./types";
+import { Diagnostic, ErrorCode, FileRef, ParseResult, Record as MarkbackRecord, Severity, WarningCode } from "./types";
 
-const KNOWN_HEADERS = new Set(["uri", "by", "source", "prior"]);
+const KNOWN_HEADERS = new Set(["id", "by", "file", "input", "tag"]);
+const V1_HEADER_MAP: { [key: string]: string } = { uri: "id", source: "file", prior: "input" };
 
 const HEADER_PATTERN = /^@([a-z]+)\s+(.+)$/;
 const FEEDBACK_DELIMITER = "<<<";
 const RECORD_SEPARATOR = "---";
-const COMPACT_PATTERN = /^@source\s+(.+?)\s+<<<\s+(.*)$/;
+const COMPACT_PATTERN = /^@file\s+(.+?)\s+<<<\s+(.*)$/;
+const V1_COMPACT_PATTERN = /^@source\s+(.+?)\s+<<<\s+(.*)$/;
+const FILE_HEADER_PATTERN = /^%([a-z]+)\s*(.*)$/;
 
 enum LineType {
   COMPACT_RECORD = "compact_record",
@@ -14,6 +17,7 @@ enum LineType {
   SEPARATOR = "separator",
   BLANK = "blank",
   CONTENT = "content",
+  FILE_HEADER = "file_header",
 }
 
 function stripLine(line: string): string {
@@ -31,8 +35,14 @@ function classifyLine(line: string): LineType {
     return LineType.SEPARATOR;
   }
 
-  if (stripped.startsWith("@source") && stripped.includes(FEEDBACK_DELIMITER)) {
-    return LineType.COMPACT_RECORD;
+  if (stripped.startsWith("%")) {
+    return LineType.FILE_HEADER;
+  }
+
+  if (stripped.includes(FEEDBACK_DELIMITER)) {
+    if (stripped.startsWith("@file") || stripped.startsWith("@source")) {
+      return LineType.COMPACT_RECORD;
+    }
   }
 
   if (stripped.startsWith("@")) {
@@ -55,24 +65,22 @@ function parseHeader(line: string): [string | null, string | null, string | null
   return [match[1], match[2], null];
 }
 
-function validateUri(uri: string): string | null {
-  const schemeMatch = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(uri);
-  if (!schemeMatch) {
-    return `URI missing scheme: ${uri}`;
-  }
-  return null;
-}
+function parseCompactRecord(line: string): [FileRef | null, string | null, string | null, boolean] {
+  const stripped = stripLine(line);
 
-function parseCompactRecord(line: string): [SourceRef | null, string | null, string | null] {
-  const match = COMPACT_PATTERN.exec(stripLine(line));
-  if (!match) {
-    return [null, null, `Invalid compact record syntax: ${line}`];
+  // Try V2 format first
+  let match = COMPACT_PATTERN.exec(stripped);
+  if (match) {
+    return [new FileRef(match[1]), match[2], null, false];
   }
 
-  const sourcePath = match[1];
-  const feedback = match[2];
+  // Try V1 format
+  match = V1_COMPACT_PATTERN.exec(stripped);
+  if (match) {
+    return [new FileRef(match[1]), match[2], null, true];
+  }
 
-  return [new SourceRef(sourcePath), feedback, null];
+  return [null, null, `Invalid compact record syntax: ${line}`, false];
 }
 
 export function parseString(text: string, sourceFile?: string | null): ParseResult {
@@ -83,6 +91,10 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
 
   const records: MarkbackRecord[] = [];
   const diagnostics: Diagnostic[] = [];
+
+  let fileVersion: number | null = null;
+  let fileScope: string[] | null = null;
+  let fileCovers: string | null = null;
 
   const addDiagnostic = (
     severity: Severity,
@@ -108,17 +120,20 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
   let currentHeaders: { [key: string]: string } = {};
   let currentContentLines: string[] = [];
   let currentStartLine = 1;
-  let pendingUri: string | null = null;
+  let pendingId: string | null = null;
   let inContent = false;
   let hadBlankLine = false;
+  let pastFileHeaders = false;
 
-  const finalizeRecord = (feedback: string, endLine: number, isCompact = false) => {
-    const uri = currentHeaders.uri ?? pendingUri;
+  const finalizeRecord = (feedback: string, endLine: number) => {
+    const id = currentHeaders.id ?? pendingId;
     const by = currentHeaders.by ?? null;
-    const sourceStr = currentHeaders.source;
-    const source = sourceStr ? new SourceRef(sourceStr) : null;
-    const priorStr = currentHeaders.prior;
-    const prior = priorStr ? new SourceRef(priorStr) : null;
+    const fileStr = currentHeaders.file;
+    const fileRef = fileStr ? new FileRef(fileStr) : null;
+    const inputStr = currentHeaders.input;
+    const inputRef = inputStr ? new FileRef(inputStr) : null;
+    const tagStr = currentHeaders.tag;
+    const tags = tagStr ? tagStr.split(/\s+/) : [];
 
     let content: string | null = null;
     if (currentContentLines.length > 0) {
@@ -135,22 +150,22 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
     records.push(
       new MarkbackRecord({
         feedback,
-        uri: uri ?? null,
+        id: id ?? null,
         by,
-        source,
-        prior,
+        file: fileRef,
+        input: inputRef,
+        tags,
         content,
         _sourceFile: sourceFile ?? null,
         _startLine: currentStartLine,
         _endLine: endLine,
-        _isCompact: isCompact,
       }),
     );
 
     currentHeaders = {};
     currentContentLines = [];
     currentStartLine = endLine + 1;
-    pendingUri = null;
+    pendingId = null;
     inContent = false;
     hadBlankLine = false;
   };
@@ -165,19 +180,44 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
       addDiagnostic(Severity.WARNING, WarningCode.W004, "Trailing whitespace", lineNum);
     }
 
+    // File-level headers
+    if (lineType === LineType.FILE_HEADER) {
+      if (pastFileHeaders) {
+        inContent = true;
+        currentContentLines.push(line);
+        continue;
+      }
+
+      const stripped = stripLine(line);
+      const match = FILE_HEADER_PATTERN.exec(stripped);
+      if (match) {
+        const keyword = match[1];
+        const value = match[2].trim();
+
+        if (keyword === "markback") {
+          const v = parseInt(value, 10);
+          if (!isNaN(v)) {
+            fileVersion = v;
+          }
+        } else if (keyword === "scope") {
+          fileScope = value ? value.split(/\s+/) : [];
+        } else if (keyword === "covers") {
+          fileCovers = value || null;
+        }
+      }
+      continue;
+    }
+
+    if (lineType !== LineType.BLANK) {
+      pastFileHeaders = true;
+    }
+
     if (lineType === LineType.SEPARATOR) {
       if (Object.keys(currentHeaders).length > 0 || currentContentLines.length > 0) {
-        addDiagnostic(
-          Severity.ERROR,
-          ErrorCode.E001,
-          "Missing feedback (no <<< delimiter found)",
-          currentStartLine,
-          undefined,
-          records.length,
-        );
+        addDiagnostic(Severity.ERROR, ErrorCode.E001, "Missing feedback (no <<< delimiter found)", currentStartLine, undefined, records.length);
       }
       currentStartLine = lineNum + 1;
-      pendingUri = null;
+      pendingId = null;
       inContent = false;
       hadBlankLine = false;
       continue;
@@ -193,40 +233,46 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
     }
 
     if (lineType === LineType.COMPACT_RECORD) {
-      const [source, feedback, error] = parseCompactRecord(line);
+      const [fileRef, feedback, error, isV1] = parseCompactRecord(line);
       if (error) {
         addDiagnostic(Severity.ERROR, ErrorCode.E006, error, lineNum);
         continue;
+      }
+
+      if (isV1) {
+        addDiagnostic(Severity.WARNING, WarningCode.W010, "V1 format detected: @source mapped to @file", lineNum);
       }
 
       if (feedback !== null && feedback.length === 0) {
         addDiagnostic(Severity.ERROR, ErrorCode.E009, "Empty feedback (nothing after <<< )", lineNum);
       }
 
-      const uri = pendingUri ?? currentHeaders.uri ?? null;
+      const id = pendingId ?? currentHeaders.id ?? null;
       const by = currentHeaders.by ?? null;
-      const priorStr = currentHeaders.prior;
-      const prior = priorStr ? new SourceRef(priorStr) : null;
+      const inputStr = currentHeaders.input;
+      const inputRef = inputStr ? new FileRef(inputStr) : null;
+      const tagStr = currentHeaders.tag;
+      const tags = tagStr ? tagStr.split(/\s+/) : [];
 
       records.push(
         new MarkbackRecord({
           feedback: feedback ?? "",
-          uri,
+          id,
           by,
-          source,
-          prior,
+          file: fileRef,
+          input: inputRef,
+          tags,
           content: null,
           _sourceFile: sourceFile ?? null,
           _startLine: currentStartLine,
           _endLine: lineNum,
-          _isCompact: true,
         }),
       );
 
       currentHeaders = {};
       currentContentLines = [];
       currentStartLine = lineNum + 1;
-      pendingUri = null;
+      pendingId = null;
       inContent = false;
       hadBlankLine = false;
       continue;
@@ -239,27 +285,31 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
         continue;
       }
 
-      const [keyword, value, error] = parseHeader(line);
+      let [keyword, value, error] = parseHeader(line);
       if (error) {
         addDiagnostic(Severity.ERROR, ErrorCode.E006, error, lineNum);
         continue;
+      }
+
+      // V1 backward compat
+      if (keyword && keyword in V1_HEADER_MAP) {
+        const newKeyword = V1_HEADER_MAP[keyword];
+        addDiagnostic(Severity.WARNING, WarningCode.W010, `V1 format detected: @${keyword} mapped to @${newKeyword}`, lineNum);
+        keyword = newKeyword;
       }
 
       if (keyword && !KNOWN_HEADERS.has(keyword)) {
         addDiagnostic(Severity.WARNING, WarningCode.W002, `Unknown header keyword: @${keyword}`, lineNum);
       }
 
-      if (keyword === "uri") {
-        if (value) {
-          const uriError = validateUri(value);
-          if (uriError) {
-            addDiagnostic(Severity.ERROR, ErrorCode.E003, uriError, lineNum);
-          }
-          pendingUri = value;
-        }
+      if (keyword === "id" && value) {
+        pendingId = value;
       }
 
-      if (keyword && value) {
+      // Merge tags
+      if (keyword === "tag" && currentHeaders.tag && value) {
+        currentHeaders.tag = currentHeaders.tag + " " + value;
+      } else if (keyword && value) {
         currentHeaders[keyword] = value;
       }
       continue;
@@ -277,31 +327,10 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
         feedback = stripped.slice(FEEDBACK_DELIMITER.length).trimStart();
       }
 
-      if (currentHeaders.source && currentContentLines.length > 0) {
-        const contentText = currentContentLines.join("\n").trim();
-        if (contentText) {
-          addDiagnostic(
-            Severity.ERROR,
-            ErrorCode.E005,
-            "Content present when @source specified",
-            currentStartLine,
-            undefined,
-            records.length,
-          );
-        }
-      }
-
       if (currentContentLines.length > 0 && !hadBlankLine) {
         const firstContent = currentContentLines[0] ?? "";
         if (firstContent.startsWith("@")) {
-          addDiagnostic(
-            Severity.ERROR,
-            ErrorCode.E010,
-            "Missing blank line before inline content (content starts with @)",
-            currentStartLine,
-            undefined,
-            records.length,
-          );
+          addDiagnostic(Severity.ERROR, ErrorCode.E010, "Missing blank line before inline content (content starts with @)", currentStartLine, undefined, records.length);
         }
       }
 
@@ -316,46 +345,27 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
   }
 
   if (Object.keys(currentHeaders).length > 0 || currentContentLines.length > 0) {
-    addDiagnostic(
-      Severity.ERROR,
-      ErrorCode.E001,
-      "Missing feedback (no <<< delimiter found)",
-      currentStartLine,
-      undefined,
-      records.length,
-    );
+    addDiagnostic(Severity.ERROR, ErrorCode.E001, "Missing feedback (no <<< delimiter found)", currentStartLine, undefined, records.length);
   }
 
-  const seenUris: { [key: string]: number } = {};
+  // Check for duplicate IDs
+  const seenIds: { [key: string]: number } = {};
   records.forEach((record, idx) => {
-    if (record.uri) {
-      if (seenUris[record.uri] !== undefined) {
-        addDiagnostic(
-          Severity.WARNING,
-          WarningCode.W001,
-          `Duplicate URI: ${record.uri} (first seen in record ${seenUris[record.uri]})`,
-          record._startLine ?? undefined,
-          undefined,
-          idx,
-        );
+    if (record.id) {
+      if (seenIds[record.id] !== undefined) {
+        addDiagnostic(Severity.WARNING, WarningCode.W001, `Duplicate ID: ${record.id} (first seen in record ${seenIds[record.id]})`, record._startLine ?? undefined, undefined, idx);
       } else {
-        seenUris[record.uri] = idx;
+        seenIds[record.id] = idx;
       }
     }
   });
 
+  // Check for missing IDs
   records.forEach((record, idx) => {
-    if (!record.uri) {
-      addDiagnostic(
-        Severity.WARNING,
-        WarningCode.W006,
-        "Missing @uri (record has no identifier)",
-        record._startLine ?? undefined,
-        undefined,
-        idx,
-      );
+    if (!record.id) {
+      addDiagnostic(Severity.WARNING, WarningCode.W006, "Missing @id (record has no identifier)", record._startLine ?? undefined, undefined, idx);
     }
   });
 
-  return new ParseResult(records, diagnostics, sourceFile ?? null);
+  return new ParseResult(records, diagnostics, sourceFile ?? null, fileScope, fileCovers, fileVersion);
 }

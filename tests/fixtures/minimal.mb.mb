@@ -1,1 +1,1 @@
-@source tests/fixtures/minimal.mb <<< 
+@file tests/fixtures/minimal.mb <<< reviewed

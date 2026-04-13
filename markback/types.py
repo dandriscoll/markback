@@ -1,4 +1,4 @@
-"""Core types for MarkBack format."""
+"""Core types for MarkBack V2 format."""
 
 import re
 from dataclasses import dataclass, field
@@ -18,9 +18,9 @@ class ErrorCode(Enum):
     """Lint error codes (MUST fix)."""
     E001 = "E001"  # Missing feedback (no <<< delimiter found)
     E002 = "E002"  # Multiple <<< delimiters in one record
-    E003 = "E003"  # Malformed URI in @uri header
+    E003 = "E003"  # Malformed URI (kept for V1 compat, not emitted in V2)
     E004 = "E004"  # Content after <<< delimiter
-    E005 = "E005"  # Content present when @source specified
+    E005 = "E005"  # (V1 only: content with @source; in V2 @file+content coexist)
     E006 = "E006"  # Malformed header syntax
     E007 = "E007"  # Invalid JSON after json: prefix
     E008 = "E008"  # Unclosed quote in structured attribute value
@@ -31,15 +31,16 @@ class ErrorCode(Enum):
 
 class WarningCode(Enum):
     """Lint warning codes (SHOULD fix)."""
-    W001 = "W001"  # Duplicate URI within same file
+    W001 = "W001"  # Duplicate ID within same file
     W002 = "W002"  # Unknown header keyword
-    W003 = "W003"  # @source file not found
+    W003 = "W003"  # @file file not found
     W004 = "W004"  # Trailing whitespace on line
     W005 = "W005"  # Multiple blank lines
-    W006 = "W006"  # Missing @uri (record has no identifier)
+    W006 = "W006"  # Missing @id (record has no identifier)
     W007 = "W007"  # Paired feedback file not found
     W008 = "W008"  # Non-canonical formatting detected
-    W009 = "W009"  # @prior file not found
+    W009 = "W009"  # @input file not found
+    W010 = "W010"  # V1 format detected
 
 
 @dataclass
@@ -77,6 +78,10 @@ class Diagnostic:
             "record_index": self.record_index,
         }
 
+    @property
+    def is_error(self) -> bool:
+        return self.severity == Severity.ERROR
+
 
 # Regex to parse line/character range from a path
 # Supports: path:line, path:line:col, path:line-line, path:line:col-line:col
@@ -84,8 +89,8 @@ _LINE_RANGE_PATTERN = re.compile(r'^(.+?):(\d+)(?::(\d+))?(?:-(\d+)(?::(\d+))?)?
 
 
 @dataclass
-class SourceRef:
-    """Reference to external content (file path or URI)."""
+class FileRef:
+    """Reference to a file path or URI, optionally with line/col ranges."""
     value: str
     is_uri: bool = False
     start_line: Optional[int] = None
@@ -95,13 +100,9 @@ class SourceRef:
     _path_only: str = ""
 
     def __post_init__(self):
-        # Parse line range if present
         self._parse_line_range()
-
-        # Determine if this is a URI or file path (using path without line range)
         if not self.is_uri:
             parsed = urlparse(self._path_only)
-            # Consider it a URI if it has a scheme that's not a Windows drive letter
             self.is_uri = bool(parsed.scheme) and len(parsed.scheme) > 1
 
     def _parse_line_range(self):
@@ -117,7 +118,6 @@ class SourceRef:
                 if match.group(5):
                     self.end_column = int(match.group(5))
             else:
-                # Single line/position reference: start and end are the same
                 self.end_line = self.start_line
                 self.end_column = self.start_column
         else:
@@ -134,17 +134,14 @@ class SourceRef:
         if self.start_line is None:
             return None
 
-        # Build start position
         if self.start_column is not None:
             start = f":{self.start_line}:{self.start_column}"
         else:
             start = f":{self.start_line}"
 
-        # Check if end is the same as start (single position)
         if self.start_line == self.end_line and self.start_column == self.end_column:
             return start
 
-        # Build end position
         if self.end_column is not None:
             end = f"-{self.end_line}:{self.end_column}"
         else:
@@ -157,7 +154,6 @@ class SourceRef:
         if self.is_uri:
             parsed = urlparse(self._path_only)
             if parsed.scheme == "file":
-                # file:// URI
                 return Path(parsed.path)
             raise ValueError(f"Cannot resolve non-file URI to path: {self.value}")
 
@@ -172,7 +168,7 @@ class SourceRef:
         return self.value
 
     def __eq__(self, other: object) -> bool:
-        if isinstance(other, SourceRef):
+        if isinstance(other, FileRef):
             return self.value == other.value
         return False
 
@@ -180,14 +176,19 @@ class SourceRef:
         return hash(self.value)
 
 
+# V1 backward compatibility alias
+SourceRef = FileRef
+
+
 @dataclass
 class Record:
     """A MarkBack record containing content and feedback."""
     feedback: str
-    uri: Optional[str] = None
+    id: Optional[str] = None
     by: Optional[str] = None
-    source: Optional[SourceRef] = None
-    prior: Optional[SourceRef] = None
+    file: Optional[FileRef] = None
+    input: Optional[FileRef] = None
+    tags: list[str] = field(default_factory=list)
     content: Optional[str] = None
     metadata: dict = field(default_factory=dict)
 
@@ -195,33 +196,52 @@ class Record:
     _source_file: Optional[Path] = field(default=None, repr=False, compare=False)
     _start_line: Optional[int] = field(default=None, repr=False, compare=False)
     _end_line: Optional[int] = field(default=None, repr=False, compare=False)
-    _is_compact: bool = field(default=False, repr=False, compare=False)
 
-    def __post_init__(self):
-        # Validate: must have either content or source
-        if self.content is None and self.source is None:
-            # This is allowed - feedback-only record
-            pass
+    # V1 backward compatibility properties
+    @property
+    def uri(self) -> Optional[str]:
+        return self.id
+
+    @uri.setter
+    def uri(self, value: Optional[str]):
+        self.id = value
+
+    @property
+    def source(self) -> Optional[FileRef]:
+        return self.file
+
+    @source.setter
+    def source(self, value: Optional[FileRef]):
+        self.file = value
+
+    @property
+    def prior(self) -> Optional[FileRef]:
+        return self.input
+
+    @prior.setter
+    def prior(self, value: Optional[FileRef]):
+        self.input = value
 
     def get_identifier(self) -> Optional[str]:
-        """Get the record identifier (URI or source path)."""
-        if self.uri:
-            return self.uri
-        if self.source:
-            return str(self.source)
+        """Get the record identifier (ID or file path)."""
+        if self.id:
+            return self.id
+        if self.file:
+            return str(self.file)
         return None
 
     def has_inline_content(self) -> bool:
-        """Check if record has inline content (vs external source)."""
+        """Check if record has inline content."""
         return self.content is not None and len(self.content.strip()) > 0
 
     def to_dict(self) -> dict:
         """Convert to JSON-serializable dict."""
         return {
-            "uri": self.uri,
+            "id": self.id,
             "by": self.by,
-            "source": str(self.source) if self.source else None,
-            "prior": str(self.prior) if self.prior else None,
+            "file": str(self.file) if self.file else None,
+            "input": str(self.input) if self.input else None,
+            "tags": self.tags,
             "content": self.content,
             "feedback": self.feedback,
             "metadata": self.metadata,
@@ -234,6 +254,9 @@ class ParseResult:
     records: list[Record]
     diagnostics: list[Diagnostic]
     source_file: Optional[Path] = None
+    scope: Optional[list[str]] = None
+    covers: Optional[str] = None
+    version: Optional[int] = None
 
     @property
     def has_errors(self) -> bool:
@@ -250,6 +273,15 @@ class ParseResult:
     @property
     def warning_count(self) -> int:
         return sum(1 for d in self.diagnostics if d.severity == Severity.WARNING)
+
+    def covered_files(self, base_path: Optional[Path] = None) -> set[Path]:
+        """Resolve the %covers glob to actual file paths."""
+        if not self.covers:
+            return set()
+        import glob as glob_module
+        base = base_path or (self.source_file.parent if self.source_file else Path("."))
+        pattern = str(base / self.covers)
+        return {Path(p) for p in glob_module.glob(pattern)}
 
 
 @dataclass
@@ -283,7 +315,7 @@ def parse_feedback(feedback: str) -> FeedbackParsed:
         try:
             result.json_data = json_module.loads(feedback[5:])
         except json_module.JSONDecodeError:
-            pass  # Invalid JSON, leave as raw
+            pass
         return result
 
     # Split on "; " (semicolon + space)
@@ -316,20 +348,16 @@ def parse_feedback(feedback: str) -> FeedbackParsed:
             continue
 
         if '=' in segment:
-            # Key-value attribute
             eq_pos = segment.index('=')
             key = segment[:eq_pos]
             value = segment[eq_pos + 1:]
-            # Remove quotes if present
             if value.startswith('"') and value.endswith('"'):
                 value = value[1:-1].replace('\\"', '"').replace('\\\\', '\\')
             result.attributes[key] = value
         else:
-            # Label or comment
             if result.label is None:
                 result.label = segment
             else:
-                # Additional non-attribute segment is a comment
                 if result.comment:
                     result.comment += "; " + segment
                 else:

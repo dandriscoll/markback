@@ -1,4 +1,4 @@
-"""Tests for MarkBack CLI."""
+"""Tests for MarkBack V2 CLI."""
 
 import pytest
 import json
@@ -18,7 +18,6 @@ class TestAnnotation:
     """Tests for the default annotation mode."""
 
     def test_single_file_with_feedback(self):
-        """Test adding feedback to a single file."""
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "test.txt"
             target.write_text("hello world")
@@ -30,27 +29,50 @@ class TestAnnotation:
             assert mb_path.exists()
             content = mb_path.read_text()
             assert "good; clear writing" in content
-            assert "hello world" in content  # inline content included
+            assert "hello world" in content
 
-    def test_single_file_with_prior(self):
-        """Test adding feedback with --prior option."""
+    def test_single_file_with_input(self):
+        """Test --input option (replaces V1 --prior)."""
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "output.txt"
             target.write_text("generated output")
-            prior = Path(tmpdir) / "prompt.txt"
-            prior.write_text("the prompt")
+            input_file = Path(tmpdir) / "prompt.txt"
+            input_file.write_text("the prompt")
 
-            result = runner.invoke(app, [str(target), "accurate", "--prior", str(prior)])
+            result = runner.invoke(app, [str(target), "accurate", "--input", str(input_file)])
 
             assert result.exit_code == 0
             mb_path = target.with_suffix(".txt.mb")
             assert mb_path.exists()
             content = mb_path.read_text()
             assert "accurate" in content
-            assert "@prior" in content
+            assert "@input" in content
+
+    def test_single_file_with_tag(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "test.txt"
+            target.write_text("hello")
+
+            result = runner.invoke(app, [str(target), "good", "--tag", "review p1"])
+
+            assert result.exit_code == 0
+            mb_path = target.with_suffix(".txt.mb")
+            content = mb_path.read_text()
+            assert "@tag review p1" in content
+
+    def test_single_file_with_by(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = Path(tmpdir) / "test.txt"
+            target.write_text("hello")
+
+            result = runner.invoke(app, [str(target), "good", "--by", "alice@example.com"])
+
+            assert result.exit_code == 0
+            mb_path = target.with_suffix(".txt.mb")
+            content = mb_path.read_text()
+            assert "@by alice@example.com" in content
 
     def test_single_file_appends(self):
-        """Test that feedback is appended to existing .mb file."""
         with tempfile.TemporaryDirectory() as tmpdir:
             target = Path(tmpdir) / "test.txt"
             target.write_text("hello")
@@ -65,7 +87,6 @@ class TestAnnotation:
             assert "great" in content
 
     def test_glob_with_feedback(self):
-        """Test glob pattern with inline feedback."""
         with tempfile.TemporaryDirectory() as tmpdir:
             for name in ["a.txt", "b.txt", "c.txt"]:
                 (Path(tmpdir) / name).write_text(f"content of {name}")
@@ -79,60 +100,26 @@ class TestAnnotation:
             content = fb_path.read_text()
             assert "approved" in content
 
-    def test_multi_files_with_feedback(self):
-        """Test shell-expanded multiple files with feedback."""
+    def test_glob_with_scope_and_covers(self):
+        """Test sweep pattern via CLI."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            files = []
-            for name in ["a.txt", "b.txt", "c.txt"]:
-                p = Path(tmpdir) / name
-                p.write_text(f"content of {name}")
-                files.append(str(p))
-
-            result = runner.invoke(app, files + ["-f", "approved"])
-
-            assert result.exit_code == 0
-            fb_path = Path(tmpdir) / "feedback.mb"
-            assert fb_path.exists()
-            content = fb_path.read_text()
-            assert "approved" in content
-
-    def test_multi_files_with_prior(self):
-        """Test shell-expanded files with --prior."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            prior = Path(tmpdir) / "prompt.txt"
-            prior.write_text("the prompt")
-            files = []
             for name in ["a.txt", "b.txt"]:
-                p = Path(tmpdir) / name
-                p.write_text(f"content of {name}")
-                files.append(str(p))
-
-            result = runner.invoke(app, ["--prior", str(prior)] + files + ["-f", "good"])
-
-            assert result.exit_code == 0
-            fb_path = Path(tmpdir) / "feedback.mb"
-            assert fb_path.exists()
-            content = fb_path.read_text()
-            assert "good" in content
-            assert "@prior" in content
-
-    def test_glob_interactive_mode(self):
-        """Test glob interactive mode with mocked stdin."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            (Path(tmpdir) / "a.txt").write_text("file a")
-            (Path(tmpdir) / "b.txt").write_text("file b")
+                (Path(tmpdir) / name).write_text(f"content of {name}")
 
             pattern = str(Path(tmpdir) / "*.txt")
-            result = runner.invoke(app, [pattern], input="good\n\n")
+            result = runner.invoke(app, [
+                pattern, "-f", "issue-A",
+                "--scope", "issue-A issue-B",
+                "--covers", "./*.txt",
+            ])
 
             assert result.exit_code == 0
             fb_path = Path(tmpdir) / "feedback.mb"
-            assert fb_path.exists()
             content = fb_path.read_text()
-            assert "good" in content
+            assert "%scope issue-A issue-B" in content
+            assert "%covers ./*.txt" in content
 
     def test_glob_no_matches(self):
-        """Test glob with no matches."""
         result = runner.invoke(app, ["/nonexistent/path/*.xyz", "-f", "feedback"])
         assert result.exit_code == 1
 
@@ -144,20 +131,18 @@ class TestInit:
         with tempfile.TemporaryDirectory() as tmpdir:
             env_path = Path(tmpdir) / ".env"
             result = runner.invoke(app, ["--init", str(env_path)])
-
             assert result.exit_code == 0
             assert env_path.exists()
             content = env_path.read_text()
             assert "FILE_MODE" in content
-            assert "EDITOR_API_BASE" in content
+            # V2: no LLM config
+            assert "EDITOR_API_BASE" not in content
 
     def test_init_no_overwrite(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             env_path = Path(tmpdir) / ".env"
             env_path.write_text("existing content")
-
             result = runner.invoke(app, ["--init", str(env_path)])
-
             assert result.exit_code == 1
             assert env_path.read_text() == "existing content"
 
@@ -165,9 +150,7 @@ class TestInit:
         with tempfile.TemporaryDirectory() as tmpdir:
             env_path = Path(tmpdir) / ".env"
             env_path.write_text("existing content")
-
             result = runner.invoke(app, ["--init", "--force", str(env_path)])
-
             assert result.exit_code == 0
             assert "FILE_MODE" in env_path.read_text()
 
@@ -209,7 +192,6 @@ class TestNormalize:
     def test_normalize_to_file(self):
         with tempfile.NamedTemporaryFile(mode='w', suffix='.mb', delete=False) as f:
             output_path = Path(f.name)
-
         try:
             result = runner.invoke(app, [
                 "--normalize", "-o", str(output_path),
@@ -243,7 +225,6 @@ class TestConvert:
     def test_convert_to_multi(self):
         with tempfile.NamedTemporaryFile(mode='w', suffix='.mb', delete=False) as f:
             output_path = Path(f.name)
-
         try:
             result = runner.invoke(app, [
                 "--convert", "--to", "multi", "-o", str(output_path),
@@ -257,7 +238,6 @@ class TestConvert:
     def test_convert_to_compact(self):
         with tempfile.NamedTemporaryFile(mode='w', suffix='.mb', delete=False) as f:
             output_path = Path(f.name)
-
         try:
             result = runner.invoke(app, [
                 "--convert", "--to", "compact", "-o", str(output_path),
@@ -267,15 +247,17 @@ class TestConvert:
         finally:
             output_path.unlink()
 
-    def test_convert_to_paired(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            output_dir = Path(tmpdir)
 
-            result = runner.invoke(app, [
-                "--convert", "--to", "paired", "-o", str(output_dir),
-                str(FIXTURES_DIR / "label_list.mb"),
-            ])
+class TestStats:
+    """Tests for --stats."""
 
-            assert result.exit_code == 0
-            label_files = list(output_dir.glob("*.label.txt"))
-            assert len(label_files) > 0
+    def test_stats_basic(self):
+        result = runner.invoke(app, ["--stats", str(FIXTURES_DIR / "multi_record.mb")])
+        assert result.exit_code == 0
+        assert "Records:" in result.output
+
+    def test_stats_json(self):
+        result = runner.invoke(app, ["--stats", "--json", str(FIXTURES_DIR / "multi_record.mb")])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert "records" in data

@@ -3,6 +3,7 @@ export {
   ErrorCode,
   WarningCode,
   Severity,
+  FileRef,
   SourceRef,
   Record,
   ParseResult,
@@ -11,7 +12,7 @@ export {
 } from "./types";
 
 export { parseString } from "./parser";
-export { writeRecordCanonical, writeRecordsMulti } from "./writer";
+export { writeRecordCanonical, writeRecordsMulti, writeString } from "./writer";
 
 export {
   lintString,

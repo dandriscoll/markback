@@ -1,32 +1,37 @@
-"""MarkBack: A compact format for content + feedback."""
+"""MarkBack V2: A compact format for content + feedback."""
 
 from .types import (
     Diagnostic,
     ErrorCode,
     FeedbackParsed,
+    FileRef,
     ParseResult,
     Record,
     Severity,
-    SourceRef,
+    SourceRef,  # V1 compat alias
     WarningCode,
     parse_feedback,
 )
 from .parser import (
     parse_file,
     parse_string,
-    parse_paired_files,
     parse_directory,
-    discover_paired_files,
+    discover_sidecars,
+    discover_paired_files,  # V1 compat alias
 )
 from .writer import (
     OutputMode,
-    normalize_file,
-    write_file,
-    write_record_canonical,
-    write_records_multi,
-    write_records_compact,
-    write_label_file,
-    write_paired_files,
+    append,
+    normalize,
+    normalize_file,  # V1 compat alias
+    write,
+    write_file,  # V1 compat
+    write_label_file,  # V1 compat
+    write_paired_files,  # V1 compat
+    write_record_canonical,  # V1 compat
+    write_records_compact,  # V1 compat
+    write_records_multi,  # V1 compat
+    write_string,
 )
 from .linter import (
     lint_file,
@@ -37,39 +42,45 @@ from .linter import (
 )
 from .config import (
     Config,
-    LLMConfig,
     load_config,
     init_env,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
-    # Types
+    # V2 Types
     "Diagnostic",
     "ErrorCode",
     "FeedbackParsed",
+    "FileRef",
     "ParseResult",
     "Record",
     "Severity",
-    "SourceRef",
     "WarningCode",
     "parse_feedback",
+    # V1 compat alias
+    "SourceRef",
     # Parser
     "parse_file",
     "parse_string",
-    "parse_paired_files",
     "parse_directory",
-    "discover_paired_files",
+    "discover_sidecars",
+    "discover_paired_files",  # V1 compat
     # Writer
     "OutputMode",
+    "append",
+    "normalize",
+    "write",
+    "write_string",
+    # V1 compat writer
     "normalize_file",
     "write_file",
-    "write_record_canonical",
-    "write_records_multi",
-    "write_records_compact",
     "write_label_file",
     "write_paired_files",
+    "write_record_canonical",
+    "write_records_compact",
+    "write_records_multi",
     # Linter
     "lint_file",
     "lint_files",
@@ -78,7 +89,6 @@ __all__ = [
     "summarize_results",
     # Config
     "Config",
-    "LLMConfig",
     "load_config",
     "init_env",
     # Version

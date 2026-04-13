@@ -1,4 +1,4 @@
-"""MarkBack linter implementation."""
+"""MarkBack V2 linter implementation."""
 
 import json
 from pathlib import Path
@@ -14,7 +14,7 @@ from .types import (
     WarningCode,
     parse_feedback,
 )
-from .writer import write_record_canonical, write_records_multi
+from .writer import _write_record_canonical, write_string
 
 
 def lint_feedback_json(
@@ -53,19 +53,16 @@ def lint_feedback_structured(
     """Lint structured feedback for unclosed quotes."""
     diagnostics: list[Diagnostic] = []
 
-    # Check for unclosed quotes
     in_quote = False
     escaped = False
 
-    for i, char in enumerate(feedback):
+    for char in feedback:
         if escaped:
             escaped = False
             continue
-
         if char == '\\':
             escaped = True
             continue
-
         if char == '"':
             in_quote = not in_quote
 
@@ -83,17 +80,17 @@ def lint_feedback_structured(
     return diagnostics
 
 
-def lint_source_exists(
+def lint_file_exists(
     record: Record,
     base_path: Optional[Path],
     record_idx: int,
 ) -> list[Diagnostic]:
-    """Check if @source file exists."""
+    """Check if @file reference exists."""
     diagnostics: list[Diagnostic] = []
 
-    if record.source and not record.source.is_uri:
+    if record.file and not record.file.is_uri:
         try:
-            resolved = record.source.resolve(base_path)
+            resolved = record.file.resolve(base_path)
             if not resolved.exists():
                 diagnostics.append(Diagnostic(
                     file=record._source_file,
@@ -101,26 +98,26 @@ def lint_source_exists(
                     column=None,
                     severity=Severity.WARNING,
                     code=WarningCode.W003,
-                    message=f"@source file not found: {record.source}",
+                    message=f"@file not found: {record.file}",
                     record_index=record_idx,
                 ))
         except ValueError:
-            pass  # URI that can't be resolved to path
+            pass
 
     return diagnostics
 
 
-def lint_prior_exists(
+def lint_input_exists(
     record: Record,
     base_path: Optional[Path],
     record_idx: int,
 ) -> list[Diagnostic]:
-    """Check if @prior file exists."""
+    """Check if @input reference exists."""
     diagnostics: list[Diagnostic] = []
 
-    if record.prior and not record.prior.is_uri:
+    if record.input and not record.input.is_uri:
         try:
-            resolved = record.prior.resolve(base_path)
+            resolved = record.input.resolve(base_path)
             if not resolved.exists():
                 diagnostics.append(Diagnostic(
                     file=record._source_file,
@@ -128,34 +125,33 @@ def lint_prior_exists(
                     column=None,
                     severity=Severity.WARNING,
                     code=WarningCode.W009,
-                    message=f"@prior file not found: {record.prior}",
+                    message=f"@input not found: {record.input}",
                     record_index=record_idx,
                 ))
         except ValueError:
-            pass  # URI that can't be resolved to path
+            pass
 
     return diagnostics
 
 
-def _is_position_invalid(source_ref) -> tuple[bool, str]:
-    """Check if a SourceRef has an invalid position range.
+# V1 compat aliases
+lint_source_exists = lint_file_exists
+lint_prior_exists = lint_input_exists
 
-    Returns (is_invalid, error_message).
-    Position is invalid if:
-    - end_line < start_line
-    - end_line == start_line and end_column < start_column
-    """
-    if source_ref.start_line is None or source_ref.end_line is None:
+
+def _is_position_invalid(ref) -> tuple[bool, str]:
+    """Check if a FileRef has an invalid position range."""
+    if ref.start_line is None or ref.end_line is None:
         return False, ""
 
-    if source_ref.end_line < source_ref.start_line:
-        return True, f"end line {source_ref.end_line} is less than start line {source_ref.start_line}"
+    if ref.end_line < ref.start_line:
+        return True, f"end line {ref.end_line} is less than start line {ref.start_line}"
 
-    if source_ref.end_line == source_ref.start_line:
-        if (source_ref.start_column is not None and
-            source_ref.end_column is not None and
-            source_ref.end_column < source_ref.start_column):
-            return True, f"end column {source_ref.end_column} is less than start column {source_ref.start_column} on line {source_ref.start_line}"
+    if ref.end_line == ref.start_line:
+        if (ref.start_column is not None and
+            ref.end_column is not None and
+            ref.end_column < ref.start_column):
+            return True, f"end column {ref.end_column} is less than start column {ref.start_column} on line {ref.start_line}"
 
     return False, ""
 
@@ -164,12 +160,11 @@ def lint_line_range(
     record: Record,
     record_idx: int,
 ) -> list[Diagnostic]:
-    """Check if line/character ranges are valid (end position >= start position)."""
+    """Check if line/character ranges are valid."""
     diagnostics: list[Diagnostic] = []
 
-    # Check @source range
-    if record.source and record.source.start_line is not None:
-        is_invalid, error_msg = _is_position_invalid(record.source)
+    if record.file and record.file.start_line is not None:
+        is_invalid, error_msg = _is_position_invalid(record.file)
         if is_invalid:
             diagnostics.append(Diagnostic(
                 file=record._source_file,
@@ -177,13 +172,12 @@ def lint_line_range(
                 column=None,
                 severity=Severity.ERROR,
                 code=ErrorCode.E011,
-                message=f"Invalid range in @source: {error_msg}",
+                message=f"Invalid range in @file: {error_msg}",
                 record_index=record_idx,
             ))
 
-    # Check @prior range
-    if record.prior and record.prior.start_line is not None:
-        is_invalid, error_msg = _is_position_invalid(record.prior)
+    if record.input and record.input.start_line is not None:
+        is_invalid, error_msg = _is_position_invalid(record.input)
         if is_invalid:
             diagnostics.append(Diagnostic(
                 file=record._source_file,
@@ -191,7 +185,7 @@ def lint_line_range(
                 column=None,
                 severity=Severity.ERROR,
                 code=ErrorCode.E011,
-                message=f"Invalid range in @prior: {error_msg}",
+                message=f"Invalid range in @input: {error_msg}",
                 record_index=record_idx,
             ))
 
@@ -206,13 +200,7 @@ def lint_canonical_format(
     """Check if file is in canonical format."""
     diagnostics: list[Diagnostic] = []
 
-    # Generate canonical version
-    if len(records) == 1:
-        canonical = write_record_canonical(records[0]) + "\n"
-    else:
-        canonical = write_records_multi(records)
-
-    # Normalize line endings for comparison
+    canonical = write_string(records, version_header=False)
     original_normalized = original_text.replace('\r\n', '\n')
 
     if original_normalized != canonical:
@@ -234,25 +222,17 @@ def lint_string(
     check_sources: bool = True,
     check_canonical: bool = True,
 ) -> ParseResult:
-    """Lint a MarkBack string.
-
-    This runs the parser (which generates many diagnostics) and then
-    performs additional linting checks.
-    """
-    # Parse first - this catches structural issues
+    """Lint a MarkBack string."""
     result = parse_string(text, source_file=source_file)
 
-    # Additional linting for each record
     for idx, record in enumerate(result.records):
-        # Lint JSON feedback
         result.diagnostics.extend(lint_feedback_json(
             record.feedback,
             source_file,
-            record._end_line,  # Feedback is at end
+            record._end_line,
             idx,
         ))
 
-        # Lint structured feedback for unclosed quotes
         if not record.feedback.startswith("json:"):
             result.diagnostics.extend(lint_feedback_structured(
                 record.feedback,
@@ -261,16 +241,13 @@ def lint_string(
                 idx,
             ))
 
-        # Check source and prior file existence
         if check_sources:
             base_path = source_file.parent if source_file else None
-            result.diagnostics.extend(lint_source_exists(record, base_path, idx))
-            result.diagnostics.extend(lint_prior_exists(record, base_path, idx))
+            result.diagnostics.extend(lint_file_exists(record, base_path, idx))
+            result.diagnostics.extend(lint_input_exists(record, base_path, idx))
 
-        # Check line range validity
         result.diagnostics.extend(lint_line_range(record, idx))
 
-    # Check canonical format
     if check_canonical and result.records and not result.has_errors:
         result.diagnostics.extend(lint_canonical_format(
             result.records,
@@ -287,6 +264,7 @@ def lint_file(
     check_canonical: bool = True,
 ) -> ParseResult:
     """Lint a MarkBack file."""
+    path = Path(path)
     try:
         text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
@@ -337,22 +315,14 @@ def lint_files(
     results: list[ParseResult] = []
 
     for path in paths:
+        path = Path(path)
         if path.is_dir():
-            # Lint all .mb files in directory
             for mb_file in path.glob("**/*.mb"):
                 results.append(lint_file(
                     mb_file,
                     check_sources=check_sources,
                     check_canonical=check_canonical,
                 ))
-            # Also lint .label.txt and .feedback.txt files
-            for pattern in ["**/*.label.txt", "**/*.feedback.txt"]:
-                for label_file in path.glob(pattern):
-                    results.append(lint_file(
-                        label_file,
-                        check_sources=check_sources,
-                        check_canonical=check_canonical,
-                    ))
         else:
             results.append(lint_file(
                 path,
@@ -367,23 +337,11 @@ def format_diagnostics(
     diagnostics: list[Diagnostic],
     format: str = "human",
 ) -> str:
-    """Format diagnostics for output.
-
-    Args:
-        diagnostics: List of diagnostics to format
-        format: Output format ("human" or "json")
-
-    Returns:
-        Formatted string
-    """
+    """Format diagnostics for output."""
     if format == "json":
         return json.dumps([d.to_dict() for d in diagnostics], indent=2)
 
-    lines: list[str] = []
-    for d in diagnostics:
-        lines.append(str(d))
-
-    return '\n'.join(lines)
+    return '\n'.join(str(d) for d in diagnostics)
 
 
 def summarize_results(results: list[ParseResult]) -> dict:

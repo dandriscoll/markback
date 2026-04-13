@@ -1,20 +1,35 @@
-# MarkBack v1 Specification
+# MarkBack V2 Specification
 
-**Version:** 0.1.0
+**Version:** 0.2.0
 **Status:** Draft
-**Date:** 2026-01-04
+**Date:** 2026-03-20
 
 ## 1. Overview
 
-MarkBack is a compact, human-writable format for storing content paired with feedback/labels. It is designed for managing training data, prompt engineering workflows, and annotation tasks where content items need associated feedback that can be consolidated to a single line.
+MarkBack is a compact, human-writable format for storing content paired with single-line feedback. It is designed for managing training data, prompt engineering workflows, annotation tasks, and code review where content items need associated feedback.
 
 ### 1.1 Design Goals
 
-- **Compact**: Minimal syntax overhead
+- **Compact**: Minimal syntax overhead; one record can be a single line
 - **Human-writable**: Easy to author and read in any text editor
-- **Lintable**: Deterministic parsing with clear error detection
-- **Flexible storage**: Supports single-file, multi-record, and paired-file modes
-- **URI-optional**: Items can exist without identifiers
+- **Lintable**: Deterministic parsing with clear error detection and canonical formatting
+- **Flexible storage**: Inline content, compact one-liners, and sidecar files
+- **Sweep-capable**: Declare scope and coverage so absence of a record is meaningful
+- **Backward-compatible**: V1 files parse transparently with warnings
+
+### 1.2 Changes from V1
+
+| V1 | V2 | Reason |
+|----|-----|--------|
+| `@uri` | `@id` | Shorter; no URI validation needed |
+| `@source` | `@file` | Concrete, unambiguous |
+| `@prior` | `@input` | Describes what was fed into a process |
+| -- | `@tag` | New: space-separated categorization tags |
+| -- | `%markback 2` | New: version declaration |
+| -- | `%scope` / `%covers` | New: sweep pattern for meaningful absence |
+| `@source` + content = E005 | `@file` + content = valid | File is provenance, content is snapshot |
+| `@uri` requires RFC 3986 | `@id` is plain string | Simpler, no validation overhead |
+| `.label.txt` / `.feedback.txt` sidecars | `name.ext.mb` sidecars | Simplified convention |
 
 ---
 
@@ -24,14 +39,13 @@ A MarkBack **record** is the fundamental unit. Every record has:
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `content` | Yes* | The content being labeled (inline or referenced) |
 | `feedback` | Yes | Text after the `<<<` delimiter (always one line) |
-| `uri` | No | Unique identifier for the item |
+| `id` | No | Plain string identifier for the record |
 | `by` | No | Freeform identifier for who provided the feedback |
-| `source` | No | Reference to external content (when content is not inline) |
-| `prior` | No | Reference to an item that precedes the source (e.g., a prompt that generated the content) |
-
-*Content is required but may be external (via `source` field).
+| `tags` | No | Space-separated tags for categorization |
+| `input` | No | Reference to an item that preceded the content (e.g., a prompt) |
+| `file` | No | Reference to external content (provenance); can coexist with inline content |
+| `content` | No | Inline text content between headers and `<<<` |
 
 ### 2.1 Record Structure
 
@@ -51,10 +65,10 @@ A record ends when `<<<` is encountered. The `<<<` is the **feedback delimiter**
 <<< feedback
 ```
 
-**Compact record (source + feedback on one line):**
+**Compact record (`@file` + feedback on one line):**
 ```
-[@uri header]
-@source <path> <<< feedback
+[@id header]
+@file <path> <<< feedback
 ```
 
 ---
@@ -66,36 +80,37 @@ A record ends when `<<<` is encountered. The `<<<` is the **feedback delimiter**
 Header lines appear at the start of a record and begin with `@`. They define metadata.
 
 ```
-@uri <uri-value>
+@id <string-value>
 @by <freeform-text>
-@source <path-or-uri>
-@prior <path-or-uri>
+@tag <space-separated-tags>
+@input <path-or-uri>
+@file <path-or-uri>
 ```
 
 **Rules:**
 - Header lines MUST start with `@` followed by a lowercase keyword
 - One space MUST separate the keyword from the value
 - Values extend to end of line (trailing whitespace trimmed)
-- Unknown headers SHOULD generate a warning (forward compatibility)
-- Headers are case-sensitive (`@uri` not `@URI`)
+- Unknown headers SHOULD generate a warning (W002, forward compatibility)
+- Headers are case-sensitive (`@id` not `@ID`)
 
-#### 3.1.1 `@uri` Header
+**Canonical header order:** `@id`, `@by`, `@tag`, `@input`, `@file`
 
-Defines the unique identifier for this record.
+#### 3.1.1 `@id` Header
+
+Defines the identifier for this record. The value is a plain string with no validation requirements.
 
 ```
-@uri https://example.com/items/123
-@uri urn:uuid:550e8400-e29b-41d4-a716-446655440000
-@uri local:my-item-name
+@id item-001
+@id https://example.com/items/123
+@id my project / review batch 7
 ```
 
-**Allowed URI schemes:** Any valid URI per RFC 3986. Common schemes:
-- `https://`, `http://` - Web resources
-- `file://` - Local files
-- `urn:` - Uniform Resource Names
-- `local:` - Application-defined local identifiers
-
-**Validation:** URI MUST be valid per RFC 3986. Parsers MUST reject malformed URIs as errors.
+**Rules:**
+- Value is freeform text extending to end of line (trailing whitespace trimmed)
+- No URI validation is performed (unlike V1's `@uri` which required RFC 3986)
+- Optional -- records without `@id` are valid (W006 warning)
+- SHOULD be unique within a file (W001 warning on duplicates)
 
 #### 3.1.2 `@by` Header
 
@@ -109,58 +124,71 @@ Identifies who provided the feedback. The value is freeform text.
 
 **Rules:**
 - Value is freeform text extending to end of line (trailing whitespace trimmed)
-- Can contain any characters including spaces, special characters, etc.
-- Commonly used for email addresses, usernames, or full names
-- Optional - records without `@by` are valid
+- Can contain any characters including spaces and special characters
+- Optional -- records without `@by` are valid
 
-#### 3.1.3 `@source` Header
+#### 3.1.3 `@tag` Header
 
-References external content instead of inline content.
+Assigns tags to the record for categorization and filtering.
 
 ```
-@source ./images/photo.jpg
-@source ../data/prompt.txt
-@source file:///absolute/path/to/file.bin
-@source https://cdn.example.com/asset.png
+@tag training positive-examples batch-2024-03
+@tag review
+```
+
+**Rules:**
+- Tags are space-separated tokens on the same line
+- Multiple `@tag` lines in the same record are merged (tags accumulate)
+- Tag values are arbitrary non-whitespace strings
+- Optional -- records without `@tag` are valid
+
+#### 3.1.4 `@input` Header
+
+References an item that precedes the content. For example, if the content is an image generated by an LLM, the input could be the prompt used to create it.
+
+```
+@input ./prompts/image-gen-prompt.txt
+@input https://example.com/prompts/123
 ```
 
 **Rules:**
 - Relative paths are resolved relative to the MarkBack file location
-- When `@source` is present, inline content MUST be empty (or contain only whitespace)
-- Parsers MUST verify referenced files exist (warning if missing)
+- `@input` can be used with or without `@file`
+- `@input` does not affect content handling (inline content and `@file` rules still apply)
+- Parsers SHOULD verify referenced files exist (W009 warning if missing)
+- Supports line/character ranges (see 3.1.6)
 
-#### 3.1.4 `@prior` Header
+#### 3.1.5 `@file` Header
 
-References an item that precedes the source material. For example, if the source is an image generated by an LLM, the prior could be the prompt that was used to create it.
+References external content. In V2, `@file` and inline content can coexist: `@file` indicates provenance (where the content came from) while inline content is a snapshot.
 
 ```
-@prior ./prompts/image-gen-prompt.txt
-@prior https://example.com/prompts/123
-@prior file:///path/to/prompt.txt
+@file ./images/photo.jpg
+@file ../data/prompt.txt
+@file https://cdn.example.com/asset.png
 ```
 
 **Rules:**
 - Relative paths are resolved relative to the MarkBack file location
-- `@prior` can be used with or without `@source`
-- `@prior` does not affect content handling (inline content or `@source` rules still apply)
-- Parsers SHOULD verify referenced files exist (warning if missing)
+- `@file` and inline content MAY coexist (`@file` is provenance, inline content is snapshot)
+- Parsers SHOULD verify referenced files exist (W003 warning if missing)
+- Supports line/character ranges (see 3.1.6)
 
-#### 3.1.5 Line and Character Range Specification
+#### 3.1.6 Line and Character Range Specification
 
-Both `@source` and `@prior` headers support optional line and character range specifications using colon notation. This allows referencing specific positions within a file.
+Both `@file` and `@input` headers support optional line and character range specifications using colon notation. This allows referencing specific positions within a file.
 
 **Syntax:**
-- Line only: `<path-or-uri>:<line>` or `<path-or-uri>:<start-line>-<end-line>`
-- With columns: `<path-or-uri>:<line>:<col>` or `<path-or-uri>:<start-line>:<start-col>-<end-line>:<end-col>`
+- Line only: `<path>:<line>` or `<path>:<start-line>-<end-line>`
+- With columns: `<path>:<line>:<col>` or `<path>:<start-line>:<start-col>-<end-line>:<end-col>`
 
 ```
-@source ./code.py:42
-@source ./code.py:42-50
-@source ./code.py:42:10
-@source ./code.py:42:10-42:25
-@source ./code.py:10:5-15:20
-@prior ./prompts/template.txt:1-20
-@source https://example.com/file.txt:100-150
+@file ./code.py:42
+@file ./code.py:42-50
+@file ./code.py:42:10
+@file ./code.py:42:10-42:25
+@file ./code.py:10:5-15:20
+@input ./prompts/template.txt:1-20
 ```
 
 **Rules:**
@@ -181,7 +209,7 @@ Both `@source` and `@prior` headers support optional line and character range sp
 Content is everything between headers and the `<<<` feedback delimiter.
 
 ```
-@uri local:example
+@id example
 
 This is the content.
 It can span multiple lines.
@@ -193,7 +221,7 @@ Any text is valid here.
 - Content ends when `<<<` is encountered
 - Content preserves internal whitespace exactly
 - Leading/trailing blank lines in content are trimmed during canonicalization
-- If `@source` is present, content block MUST be empty
+- `@file` and inline content MAY coexist (file is provenance, content is snapshot)
 
 #### 3.2.1 Blank Line Requirement
 
@@ -201,7 +229,7 @@ A blank line between headers and content is **required only when inline content 
 
 **With inline content (blank line required):**
 ```
-@uri local:example
+@id example
 
 @mentions are a Twitter feature worth studying.
 <<< positive
@@ -209,13 +237,13 @@ A blank line between headers and content is **required only when inline content 
 
 **Without inline content (blank line optional):**
 ```
-@uri local:example
-@source ./photo.jpg
+@id example
+@file ./photo.jpg
 <<< appropriate
 ```
 
 ```
-@uri local:example
+@id example
 <<< feedback with no content
 ```
 
@@ -229,7 +257,7 @@ The `<<<` delimiter marks where feedback begins. Everything after `<<<` (on that
 - Feedback MUST be a single line (no embedded newlines)
 - `<<<` can appear:
   - On its own line (full records)
-  - After `@source <path>` on the same line (compact records)
+  - After `@file <path>` on the same line (compact records)
 
 #### 3.3.1 Feedback Content Encoding
 
@@ -304,37 +332,40 @@ Three hyphens on a line by themselves. This is the **record separator**.
 
 **Rules:**
 - Record separator MUST be exactly `---` (no leading/trailing whitespace)
-- Record separator is REQUIRED between records (except in compact mode, see 3.5)
+- Record separator is REQUIRED between full records
 - Record separator is OPTIONAL before the first record
 - Record separator is OPTIONAL after the last record
 - Blank lines around separators are ignored
+- Record separator is NOT needed between consecutive compact records
 
 ### 3.5 Compact Single-Line Records
 
-For labeling many external files efficiently, `@source` and `<<<` can appear on the **same line**:
+For labeling many external files efficiently, `@file` and `<<<` can appear on the **same line**:
 
 ```
-@source <path-or-uri> <<< <feedback>
+@file <path-or-uri> <<< <feedback>
 ```
 
 **Examples:**
 ```
-@source ./images/cat.jpg <<< positive; animal=cat
-@source ./images/dog.jpg <<< positive; animal=dog
-@source ./images/blurry.jpg <<< rejected; too blurry to classify
-@source ./audio/clip1.wav <<< transcription="hello world"
+@file ./images/cat.jpg <<< positive; animal=cat
+@file ./images/dog.jpg <<< positive; animal=dog
+@file ./images/blurry.jpg <<< rejected; too blurry to classify
+@file ./audio/clip1.wav <<< transcription="hello world"
 ```
 
 **Rules:**
-- The line MUST start with `@source`
-- `<<<` separates the source path from feedback
+- The line MUST start with `@file`
+- `<<<` separates the file path from feedback
 - Path ends at the space before `<<<`
 - No record separator (`---`) needed between compact records
 - Blank lines between compact records are ignored
-- `@uri` can optionally precede `@source` on its own line:
+- Other headers (`@id`, `@by`, `@tag`, `@input`) can precede the compact line on their own lines:
   ```
-  @uri local:item-001
-  @source ./file.txt <<< feedback here
+  @id item-001
+  @by reviewer@example.com
+  @tag batch-1 priority
+  @file ./file.txt <<< feedback here
   ```
 
 **Mixing formats:**
@@ -342,174 +373,225 @@ For labeling many external files efficiently, `@source` and `<<<` can appear on 
 Compact and full records can coexist in one file, separated by `---`:
 
 ```
-@source ./quick1.jpg <<< good
-@source ./quick2.jpg <<< good
+@file ./quick1.jpg <<< good
+@file ./quick2.jpg <<< good
 
 ---
-@uri local:detailed-item
+@id detailed-item
 
 This item has inline content that needs
 multiple lines to express properly.
 <<< needs review; complex case
 
 ---
-@source ./quick3.jpg <<< approved
+@file ./quick3.jpg <<< approved
 ```
 
 ---
 
-## 4. Storage Modes
+## 4. File-Level Headers
 
-### 4.1 Single-File Mode (One Record)
+File-level headers use the `%` prefix and appear at the top of a file, before any records. They declare metadata about the file as a whole.
 
-A file contains exactly one record. No record separator needed.
+### 4.1 `%markback` -- Version Declaration
 
-**File:** `prompt.mb`
-```
-@uri local:prompt-001
-
-Write a haiku about programming.
-<<< quality=good; creativity=high
-```
-
-### 4.2 Multi-Record Mode
-
-A file contains multiple records separated by `---`.
-
-**File:** `labels.mb`
-```
-@uri local:item-001
-
-First piece of content here.
-<<< positive
----
-@uri local:item-002
-
-Second piece of content.
-Multiple lines are fine.
-<<< negative; reason=unclear
----
-Third item has no URI.
-<<< neutral
-```
-
-### 4.3 Paired-File Mode
-
-Content and feedback stored in separate files, linked by naming convention.
-
-#### 4.3.1 File Naming Patterns
-
-| Content File | Feedback File |
-|--------------|---------------|
-| `name.ext` | `name.label.txt` |
-| `name.ext` | `name.feedback.txt` |
-| `name.ext` | `name.mb` |
-
-**Resolution order** (first match wins):
-1. `{basename}.label.txt`
-2. `{basename}.feedback.txt`
-3. `{basename}.mb`
-
-Where `{basename}` is the content filename without extension for single-extension files, or the full filename for extensionless files.
-
-#### 4.3.2 Feedback File Format (Paired Mode)
-
-In paired mode, the feedback file contains ONLY:
-- Optional header lines (`@uri`, but NOT `@source`)
-- The feedback line
+Declares the MarkBack format version.
 
 ```
-@uri local:photo-001
-<<< appropriate; quality=excellent
-```
-
-Or minimally:
-```
-<<< approved
+%markback 2
 ```
 
 **Rules:**
-- `@source` is implicit (the paired content file)
-- Content MUST NOT appear in the feedback file
-- If `@uri` is absent, the content filename becomes the de-facto identifier
+- Value MUST be an integer
+- Current version is `2`
+- Optional but recommended for clarity
+- MUST appear before any record-level content
+- If absent, parsers attempt V2 then V1 parsing
 
-#### 4.3.3 Precedence
+### 4.2 `%scope` -- Issue Scope
 
-When both filename and `@uri` could identify a record:
-1. Embedded `@uri` takes precedence if present
-2. Filename is used only when `@uri` is absent
-3. Parsers SHOULD warn if filename-derived ID conflicts with `@uri`
+Declares the set of issues or concerns being checked in this file.
 
-### 4.4 Label List Mode
+```
+%scope issue-A issue-B code-quality
+```
 
-A compact file containing many labels, one per line, using compact single-line records.
+**Rules:**
+- Values are space-separated tokens
+- Used with `%covers` to enable the sweep pattern (section 6)
+- Optional
+
+### 4.3 `%covers` -- Coverage Declaration
+
+Declares a glob pattern identifying the complete set of files under review.
+
+```
+%covers ./gen/batch3/*.txt
+%covers ./src/**/*.py
+```
+
+**Rules:**
+- Value is a single glob pattern
+- Files matching the pattern that have no record are implicitly clean for all `%scope` items
+- Resolved relative to the MarkBack file location
+- Optional; meaningful only when combined with `%scope`
+
+### 4.4 File-Level Header Placement
+
+All `%` headers MUST appear at the top of the file, before any blank lines that precede records. Once a non-blank, non-`%` line is encountered, the file-level header section is closed.
+
+```
+%markback 2
+%scope correctness style
+%covers ./src/*.py
+
+@id review-001
+@file ./src/app.py
+<<< style; rename variable on line 42
+```
+
+Unknown `%` headers generate a W002 warning.
+
+---
+
+## 5. Storage Modes
+
+MarkBack supports three storage modes. All produce the same logical record structure.
+
+### 5.1 Inline Mode
+
+Content and feedback stored together in a single `.mb` file. Records are separated by `---`.
+
+**File:** `training-data.mb`
+```
+%markback 2
+
+@id sample-001
+@tag training
+
+The quick brown fox jumps over the lazy dog.
+<<< neutral; this is a standard pangram for testing
+
+---
+@id sample-002
+@tag training
+
+I absolutely love this product! Best purchase ever!
+<<< positive; tone is overly enthusiastic but genuine
+```
+
+### 5.2 Compact Mode
+
+One annotation per line using `@file ... <<<`. Each line is a complete record. No `---` separator needed between compact records.
 
 **File:** `image-labels.mb`
 ```
-@source ./images/001.jpg <<< positive; cat
-@source ./images/002.jpg <<< positive; dog
-@source ./images/003.jpg <<< negative; blurry
-@source ./images/004.jpg <<< positive; bird
-@source ./images/005.jpg <<< rejected; not an animal
-@source ./images/006.jpg <<< positive; cat; orange tabby
+%markback 2
+
+@file ./photos/IMG_001.jpg <<< approved; scene=beach
+@file ./photos/IMG_002.jpg <<< approved; scene=mountain
+@file ./photos/IMG_003.jpg <<< rejected; too dark
+@file ./photos/IMG_004.jpg <<< approved; scene=city; time=night
 ```
 
-**File:** `prompt-feedback.mb`
+**With additional headers:**
 ```
-@source ./prompts/prompt1.txt <<< good; clear and specific
-@source ./prompts/prompt2.txt <<< needs work; too vague
-@source ./prompts/prompt3.txt <<< excellent; perfect constraints
-@source ./prompts/prompt4.txt <<< rejected; contains harmful content
+%markback 2
+
+@id review-001
+@by dan@example.com
+@tag batch-1
+@file ./batch1/item1.txt <<< positive
+
+@id review-002
+@by dan@example.com
+@tag batch-1
+@file ./batch1/item2.txt <<< negative; confusing instructions
 ```
 
-**With URIs:**
-```
-@uri dataset:img-001
-@source ./images/001.jpg <<< positive
+### 5.3 Sidecar Mode
 
-@uri dataset:img-002
-@source ./images/002.jpg <<< negative; wrong category
+Content lives in its original file; annotation lives in a sidecar `.mb` file alongside it.
+
+**Convention:** `name.ext.mb` (append `.mb` to the full content filename).
+
+| Content File | Sidecar File |
+|--------------|--------------|
+| `report.pdf` | `report.pdf.mb` |
+| `diagram.png` | `diagram.png.mb` |
+| `app.py` | `app.py.mb` |
+
+**Sidecar file format:** Contains headers and feedback only (no `@file` needed since the content file is implicit).
+
+**Content file:** `essay.txt`
+```
+The Industrial Revolution marked a major turning point in history.
+```
+
+**Sidecar file:** `essay.txt.mb`
+```
+@id essay-industrial-revolution
+@by reviewer@example.com
+<<< good; grade=B+; well structured but needs more specific examples
 ```
 
 **Rules:**
-- Each `@source ... <<<` line is one complete record
-- No `---` separator needed between compact records
-- Blank lines are ignored (for readability grouping)
-- Optional `@uri` on preceding line associates with next `@source` line
-- Mix with full records using `---` separator when needed
+- `@file` is implicit (the adjacent content file)
+- Content MUST NOT appear in the sidecar file
+- If `@id` is absent, the content filename becomes the de-facto identifier
+- A sidecar file MAY contain multiple records (e.g., multiple reviewers) separated by `---`
 
 ---
 
-## 5. Canonicalization
+## 6. Sweep Pattern
+
+The **sweep pattern** enables "meaningful absence" -- the ability to confirm that a file was reviewed and found clean, without requiring an explicit record for every file.
+
+### 6.1 Concept
+
+When `%scope` and `%covers` are both present, files matching `%covers` that have **no** corresponding record are implicitly clean for all items declared in `%scope`.
+
+### 6.2 Example
+
+```
+%markback 2
+%scope correctness style
+%covers ./gen/batch3/*.txt
+
+@file ./gen/batch3/file2.txt <<< style; tone is off
+@file ./gen/batch3/file5.txt <<< correctness; wrong output format
+```
+
+In this example:
+- The reviewer checked all `.txt` files in `./gen/batch3/` for `correctness` and `style` issues
+- `file2.txt` has a style issue; `file5.txt` has a correctness issue
+- All other files matching the glob (e.g., `file1.txt`, `file3.txt`, `file4.txt`) are implicitly clean for both `correctness` and `style`
+
+### 6.3 Programmatic Access
+
+Implementations SHOULD provide a `covered_files()` method that resolves the `%covers` glob to actual file paths. The set difference between covered files and files with records gives the implicitly clean files.
+
+---
+
+## 7. Canonicalization
 
 Canonical form ensures consistent output for comparison and version control.
 
-### 5.1 Canonical Record Format
+### 7.1 Canonical Header Order
 
-**Full record (with inline content):**
-```
-@uri <uri>\n          // if present, URI first
-\n                    // blank line before content
-<content>\n           // content with normalized line endings
-<<< <feedback>\n      // feedback
-```
+Headers MUST appear in this order:
 
-**Full record (no inline content):**
-```
-@uri <uri>\n          // headers
-<<< <feedback>\n      // feedback immediately follows
-```
+1. `@id`
+2. `@by`
+3. `@tag`
+4. `@input`
+5. `@file`
+6. Unknown headers (alphabetical)
 
-**Compact record (external source only):**
-```
-@uri <uri>\n          // if present, on its own line
-@source <path> <<< <feedback>\n
-```
-
-### 5.2 Canonicalization Rules
+### 7.2 Canonicalization Rules
 
 1. **Line endings:** Normalize to `\n` (LF)
-2. **Header order:** `@uri` before `@by` before `@prior` before `@source` before unknown headers (alphabetical)
+2. **Header order:** Follow canonical order (section 7.1)
 3. **Header spacing:** Exactly one space after keyword
 4. **Trailing whitespace:** Remove from all lines
 5. **Content whitespace:** Preserve internal whitespace; trim leading/trailing blank lines
@@ -517,38 +599,64 @@ Canonical form ensures consistent output for comparison and version control.
 7. **Feedback spacing:** Exactly one space after `<<<`
 8. **Record separator:** `---` on its own line, one blank line before (except at file start)
 9. **File ending:** Single newline at end of file
-10. **Compact records:** Prefer compact format when record has `@source` and no inline content
+10. **Compact preference:** Use compact format when record has `@file` and no inline content
+11. **Tag merging:** Multiple `@tag` lines merged to a single `@tag` line
 
-### 5.3 Canonical Multi-Record Format
+### 7.3 Canonical Full Record
 
-**Full records:**
 ```
-@uri local:first
+@id <id>
+@by <by>
+@tag <tags>
+@input <input>
+@file <file>
+
+<content>
+<<< <feedback>
+```
+
+Headers are omitted when absent. Blank line appears only when inline content is present.
+
+### 7.4 Canonical Compact Record
+
+```
+@id <id>
+@by <by>
+@tag <tags>
+@input <input>
+@file <path> <<< <feedback>
+```
+
+### 7.5 Canonical Multi-Record File
+
+**Full records separated by `---`:**
+```
+@id first
 
 Content one.
 <<< feedback-one
 
 ---
-@uri local:second
+@id second
 
 Content two.
 <<< feedback-two
 ```
 
-**Compact records (label list):**
+**Compact records (no separator):**
 ```
-@source ./file1.txt <<< feedback-one
-@source ./file2.txt <<< feedback-two
-@source ./file3.txt <<< feedback-three
+@file ./file1.txt <<< feedback-one
+@file ./file2.txt <<< feedback-two
+@file ./file3.txt <<< feedback-three
 ```
 
 **Mixed (use `---` to transition between formats):**
 ```
-@source ./quick1.txt <<< good
-@source ./quick2.txt <<< good
+@file ./quick1.txt <<< good
+@file ./quick2.txt <<< good
 
 ---
-@uri local:full-record
+@id full-record
 
 Inline content here.
 <<< detailed feedback
@@ -556,91 +664,138 @@ Inline content here.
 
 ---
 
-## 6. Parsing Algorithm
+## 8. Parsing Algorithm
 
-### 6.1 Line Classification
+### 8.1 Line Classification
 
 Each line is classified as one of:
-- **Compact record:** Starts with `@source` and contains `<<<`
-- **Header:** Starts with `@` (but not a compact record)
-- **Feedback delimiter:** Contains `<<<`
-- **Separator:** Exactly `---`
-- **Blank:** Empty or whitespace only
-- **Content:** Anything else
 
-### 6.2 Single Record Parsing
+| Type | Detection |
+|------|-----------|
+| **File header** | Starts with `%` (only valid at top of file) |
+| **Compact record** | Starts with `@file` (or V1 `@source`) and contains `<<<` |
+| **Header** | Starts with `@` (but not a compact record) |
+| **Feedback** | Starts with `<<<` |
+| **Separator** | Exactly `---` |
+| **Blank** | Empty or whitespace only |
+| **Content** | Anything else |
+
+### 8.2 File-Level Header Parsing
+
+```
+1. Read lines from top of file
+2. While line is blank or starts with %, process file-level headers:
+   a. %markback <int> sets the version
+   b. %scope <tokens> sets the scope list (space-separated)
+   c. %covers <glob> sets the coverage pattern
+   d. Unknown % headers emit W002 warning
+3. Once a non-blank, non-% line is encountered, file-level section is closed
+4. Any % line after the file-level section is treated as content
+```
+
+### 8.3 Single Record Parsing
 
 **Full record:**
 ```
 1. Read lines until <<< is encountered
 2. Identify header lines (starting with @) at the beginning
-3. Content is everything between headers and <<<
-4. If content is present, require blank line after headers
-5. Extract feedback (everything after "<<< ")
+3. Map V1 headers to V2 equivalents, emitting W010 for each
+4. Content is everything between headers and <<<
+5. If content is present, require blank line after headers
+6. Extract feedback (everything after "<<< ")
 ```
 
 **Compact record:**
 ```
-1. Line starts with @source and contains <<<
-2. Split on " <<< " to get source path and feedback
-3. Check preceding line for @uri header (optional)
-4. No content (external source only)
+1. Line starts with @file (or V1 @source) and contains <<<
+2. Split on " <<< " to get file path and feedback
+3. Check preceding lines for other headers (@id, @by, @tag, @input)
+4. No inline content
 ```
 
-### 6.3 Multi-Record Parsing
+### 8.4 Multi-Record Parsing
 
 ```
-1. Process lines sequentially
-2. Compact records (@source ... <<<) are complete on one line
-3. --- separator starts a new record context
-4. Full records end when <<< is encountered
-5. Validate no duplicate URIs within file
+1. Process file-level headers at top of file
+2. Process lines sequentially
+3. Compact records (@file ... <<<) are complete on one line
+4. --- separator starts a new record context
+5. Full records end when <<< is encountered
+6. Validate no duplicate IDs within file (W001)
+7. Warn on records without @id (W006)
 ```
 
-### 6.4 Paired-File Resolution
+### 8.5 V1 Header Mapping
+
+When a V1 header keyword is encountered, it is transparently mapped:
+
+| V1 Header | V2 Header | Action |
+|-----------|-----------|--------|
+| `@uri` | `@id` | Map and emit W010 |
+| `@source` | `@file` | Map and emit W010 |
+| `@prior` | `@input` | Map and emit W010 |
+
+V1 compact records (`@source ... <<<`) are also recognized and mapped with W010.
+
+### 8.6 Sidecar Discovery
 
 ```
-1. Given content file path, search for feedback file using patterns
-2. Parse feedback file (headers + feedback only)
-3. Create record with implicit @source pointing to content file
-4. Content is loaded from the content file on demand
+1. Given content file path, look for <filename>.mb sidecar
+2. V1 legacy: also check {basename}.label.txt and {basename}.feedback.txt
+3. Parse sidecar file (headers + feedback only)
+4. Create record with implicit @file pointing to content file
 ```
+
+Discovery priority:
+1. `name.ext.mb` (V2)
+2. `name.label.txt` (V1 legacy)
+3. `name.feedback.txt` (V1 legacy)
 
 ---
 
-## 7. Lint Rules
+## 9. Lint Rules
 
-### 7.1 Errors (MUST fix)
+### 9.1 Errors (MUST fix)
 
 | Code | Description |
 |------|-------------|
-| E001 | Missing feedback (no `<<<` delimiter found) |
+| E001 | Missing feedback (no `<<<` delimiter found in record) |
 | E002 | Multiple `<<<` delimiters in one record |
-| E003 | Malformed URI in `@uri` header |
 | E004 | Content after `<<<` delimiter (feedback must end the record) |
-| E005 | Content present when `@source` specified |
-| E006 | Malformed header syntax |
+| E006 | Malformed header syntax or invalid file encoding |
 | E007 | Invalid JSON after `json:` prefix (only when `json:` prefix present) |
 | E008 | Unclosed quote in structured attribute value (only in `structured` parse mode) |
-| E009 | Empty feedback (nothing after `<<< `) |
+| E009 | Empty feedback (nothing after `<<<`) |
 | E010 | Missing blank line before inline content (content starts with `@`) |
-| E011 | Invalid line range (end line less than start line) |
+| E011 | Invalid line/character range (end position before start position) |
 
-### 7.2 Warnings (SHOULD fix)
+### 9.2 Warnings (SHOULD fix)
 
 | Code | Description |
 |------|-------------|
-| W001 | Duplicate URI within same file |
-| W002 | Unknown header keyword |
-| W003 | `@source` file not found |
+| W001 | Duplicate `@id` within same file |
+| W002 | Unknown header keyword (`@` or `%` prefix) |
+| W003 | `@file` referenced file not found |
 | W004 | Trailing whitespace on line |
-| W005 | Multiple blank lines (will be normalized) |
-| W006 | Missing `@uri` (record has no identifier) |
-| W007 | Paired feedback file not found for content file |
+| W005 | Multiple consecutive blank lines (will be normalized) |
+| W006 | Missing `@id` (record has no identifier) |
+| W007 | Paired sidecar file not found for content file |
 | W008 | Non-canonical formatting detected |
-| W009 | `@prior` file not found |
+| W009 | `@input` referenced file not found |
+| W010 | V1 format detected (old header mapped to V2 equivalent) |
 
-### 7.3 Lint Output Format
+### 9.3 Retired Error Codes
+
+These V1 error codes are no longer emitted in V2:
+
+| Code | V1 Description | V2 Status |
+|------|---------------|-----------|
+| E003 | Malformed URI in `@uri` | Retired: `@id` has no format validation |
+| E005 | Content present when `@source` specified | Retired: `@file` + inline content coexist in V2 |
+
+Implementations MAY retain these codes for V1 compatibility but MUST NOT emit them when parsing V2 files.
+
+### 9.4 Lint Output Format
 
 ```
 <file>:<line>:<column>: <E/W><code> <message>
@@ -650,55 +805,237 @@ Example:
 ```
 labels.mb:15:1: E001 Missing feedback line in record starting at line 12
 labels.mb:8:5: W004 Trailing whitespace
+labels.mb:3:1: W010 V1 format detected: @uri mapped to @id
 ```
 
 ---
 
-## 8. Examples
+## 10. Examples
 
-### 8.1 Minimal Record (No URI)
+### 10.1 Minimal Record (No Headers)
 
 ```
 This is some content to be labeled.
 <<< positive
 ```
 
-### 8.2 Record with URI
+### 10.2 Record with All Headers
 
 ```
-@uri https://example.com/items/prompt-42
+@id review-001
+@by alice@company.com
+@tag security p0 urgent
+@input ./prompts/security-check.txt
+@file ./src/auth.py:45-67
+
+The auth module has potential SQL injection.
+<<< vulnerable; sql-injection in query builder
+```
+
+### 10.3 File + Inline Content Coexistence
+
+The `@file` header indicates provenance while inline content is a snapshot:
+
+```
+@id code-review-001
+@file ./src/app.py:42-50
+
+def add(a, b):
+    return a + b
+<<< approved; simple and correct
+```
+
+### 10.4 Record with Attribution
+
+```
+@id prompt-042
+@by dan@example.com
 
 What is the capital of France?
 <<< correct; answer=Paris; difficulty=easy
 ```
 
-### 8.3 Record with External Content Reference
+### 10.5 Compact Label List
+
+**File:** `image-annotations.mb`
+```
+%markback 2
+
+@file ./photos/IMG_001.jpg <<< approved; scene=beach
+@file ./photos/IMG_002.jpg <<< approved; scene=mountain
+@file ./photos/IMG_003.jpg <<< rejected; too dark
+@file ./photos/IMG_004.jpg <<< approved; scene=city; time=night
+@file ./photos/IMG_005.jpg <<< needs review; possibly inappropriate
+@file ./photos/IMG_006.jpg <<< approved; scene=forest
+```
+
+### 10.6 Compact Records with Additional Headers
 
 ```
-@uri local:vacation-photo-001
-@source ./images/beach.jpg
-<<< appropriate; tags=landscape,beach,sunset; quality=high
+%markback 2
+
+@id review-001
+@by dan@example.com
+@tag batch-1
+@file ./batch1/item1.txt <<< positive
+
+@id review-002
+@by dan@example.com
+@tag batch-1
+@file ./batch1/item2.txt <<< negative; confusing instructions
 ```
 
-Or in compact form:
+### 10.7 Multi-Record with Mixed Formats
+
+**File:** `training-data.mb`
 ```
-@uri local:vacation-photo-001
-@source ./images/beach.jpg <<< appropriate; tags=landscape,beach,sunset; quality=high
+%markback 2
+
+@id sample-001
+@tag training
+
+The quick brown fox jumps over the lazy dog.
+<<< neutral; this is a standard pangram for testing
+
+---
+@id sample-002
+@tag training
+
+I absolutely love this product! Best purchase ever!
+<<< positive; tone is overly enthusiastic but genuine
+
+---
+@file ./audio/sample-003.wav <<< transcription="Hello world"; quality=clear
 ```
 
-### 8.4 Record with Prior Reference (e.g., LLM-generated content)
+### 10.8 Sweep Pattern
+
+**File:** `code-review.mb`
+```
+%markback 2
+%scope correctness style naming
+%covers ./src/batch3/*.py
+
+@file ./src/batch3/handler.py:15-20 <<< style; function too long
+@file ./src/batch3/utils.py:8 <<< naming; rename `x` to something descriptive
+```
+
+All other `.py` files in `./src/batch3/` are implicitly clean for correctness, style, and naming.
+
+### 10.9 Sidecar File
+
+**Content file:** `diagram.png` (binary)
+
+**Sidecar file:** `diagram.png.mb`
+```
+@id architecture-diagram-v2
+@by jane@example.com
+@tag architecture approved
+<<< approved; type=diagram; category=architecture
+```
+
+### 10.10 Tags with Merging
 
 ```
-@uri local:generated-image-001
-@prior ./prompts/beach-sunset.txt
-@source ./images/generated-beach.jpg
+@id item-001
+@tag training positive-examples batch-2024-03
+@file ./data/example.txt
+<<< approved
+```
+
+Multiple `@tag` lines merge:
+```
+@id item-002
+@tag training
+@tag positive-examples
+@tag batch-2024-03
+@file ./data/example.txt
+<<< approved
+```
+
+Both produce the same record with tags `["training", "positive-examples", "batch-2024-03"]`.
+
+### 10.11 Character-Level References
+
+Reference a specific line:
+```
+@file ./code.py:42 <<< potential bug at this position
+```
+
+Reference a line range:
+```
+@file ./code.py:42-50 <<< this block needs refactoring
+```
+
+Reference a character range:
+```
+@file ./code.py:10:5-15:20 <<< extract this into a helper function
+```
+
+Use with `@input`:
+```
+@input ./prompts/template.txt:1-20
+@file ./output/result.txt
+<<< good; followed template constraints
+```
+
+### 10.12 Complex Structured Feedback (JSON)
+
+```
+@id complex-example
+
+Multi-attribute content with special characters.
+<<< json:{"rating":4.5,"tags":["important","review"],"notes":"Contains \"quoted\" text","scores":{"accuracy":0.9,"relevance":0.85}}
+```
+
+### 10.13 File-Level Headers with Sweep
+
+```
+%markback 2
+%scope tone accuracy completeness
+%covers ./responses/*.txt
+
+@id resp-007
+@file ./responses/answer7.txt <<< tone; too informal for business context
+
+@id resp-012
+@file ./responses/answer12.txt <<< accuracy; incorrect date mentioned
+```
+
+### 10.14 Freeform Feedback Styles
+
+```
+@id review-a
+
+This prompt is too vague.
+<<< rejected; be more specific about the desired output format
+
+---
+@id review-b
+
+Write a poem about nature.
+<<< good; consider adding constraints like length or style
+
+---
+@id review-c
+
+Explain machine learning to a child.
+<<< needs work; the explanation assumes too much prior knowledge
+```
+
+### 10.15 LLM-Generated Content with Input Reference
+
+```
+@id generated-image-001
+@input ./prompts/beach-sunset.txt
+@file ./images/generated-beach.jpg
 <<< accurate; matches prompt well; quality=high
 ```
 
-Or with inline content:
+With inline content:
 ```
-@uri local:generated-text-001
-@prior ./prompts/haiku-prompt.txt
+@id generated-text-001
+@input ./prompts/haiku-prompt.txt
 
 Cherry blossoms fall,
 Petals dance on gentle breeze,
@@ -706,276 +1043,164 @@ Spring whispers goodbye.
 <<< creative; follows haiku structure; quality=excellent
 ```
 
-### 8.5 Record with Attribution
-
-```
-@uri local:review-001
-@by dan@example.com
-
-This code needs better error handling.
-<<< actionable; priority=high
-```
-
-Or with a full name:
-```
-@uri local:review-002
-@by Dan Driscoll
-@source ./src/app.py
-<<< approved; good code quality
-```
-
-### 8.6 Character-Level References
-
-Reference a specific position in a file:
-```
-@source ./code.py:42:10 <<< potential bug at this position
-```
-
-Reference a character range on a single line:
-```
-@source ./code.py:42:10-42:25 <<< consider renaming this variable
-```
-
-Reference a multi-line character range:
-```
-@source ./code.py:10:5-15:20 <<< this function needs refactoring
-```
-
-### 8.7 Single-File Example
-
-**File:** `question.mb`
-```
-@uri urn:uuid:a1b2c3d4-e5f6-7890-abcd-ef1234567890
-
-Explain quantum entanglement in simple terms.
-<<< quality=excellent; accuracy=high; clarity=good
-```
-
-### 8.8 Label List Example (Compact Format)
-
-**File:** `image-annotations.mb`
-```
-@source ./photos/IMG_001.jpg <<< approved; scene=beach
-@source ./photos/IMG_002.jpg <<< approved; scene=mountain
-@source ./photos/IMG_003.jpg <<< rejected; too dark
-@source ./photos/IMG_004.jpg <<< approved; scene=city; time=night
-@source ./photos/IMG_005.jpg <<< needs review; possibly inappropriate
-@source ./photos/IMG_006.jpg <<< approved; scene=forest
-```
-
-**File:** `prompt-review.mb`
-```
-@source ./prompts/creative-writing.txt <<< good; use as training example
-@source ./prompts/code-generation.txt <<< excellent; clear constraints
-@source ./prompts/translation.txt <<< needs work; specify source language
-@source ./prompts/summarization.txt <<< rejected; too vague
-```
-
-**With URIs for tracking:**
-```
-@uri review:2024-001
-@source ./batch1/item1.txt <<< positive
-
-@uri review:2024-002
-@source ./batch1/item2.txt <<< negative; confusing instructions
-
-@uri review:2024-003
-@source ./batch1/item3.txt <<< positive; excellent clarity
-```
-
-### 8.9 Multi-Record Example (Mixed Freeform and Structured)
-
-**File:** `training-data.mb`
-```
-@uri local:sample-001
-
-The quick brown fox jumps over the lazy dog.
-<<< neutral; this is a standard pangram for testing
-
----
-@uri local:sample-002
-
-I absolutely love this product! Best purchase ever!
-<<< positive; tone is overly enthusiastic but genuine
-
----
-@uri local:sample-003
-
-The service was terrible and I want a refund.
-<<< negative; customer complaint - needs escalation to support team
-
----
-@uri local:sample-004
-
-Please write a formal letter requesting a meeting.
-<<< good; formality=high; could use more specific date suggestions
-
----
-@source ./audio/sample-005.wav <<< transcription="Hello world"; quality=clear; language=en
-```
-
-### 8.10 Paired-File Example
-
-**Content file:** `essay.txt`
-```
-The Industrial Revolution marked a major turning point in history.
-It began in Britain in the late 18th century and spread to other
-parts of the world. The revolution brought significant changes in
-agriculture, manufacturing, mining, and transport.
-```
-
-**Feedback file:** `essay.label.txt`
-```
-@uri local:essay-industrial-revolution
-<<< good; grade=B+; well structured but needs more specific examples
-```
-
-### 8.11 Freeform Feedback Examples
-
-Various styles of freeform feedback:
-
-```
-This prompt is too vague.
-<<< rejected; be more specific about the desired output format
-
----
-Write a poem about nature.
-<<< good; consider adding constraints like length or style
-
----
-@uri local:code-review-001
-
-def add(a, b): return a + b
-<<< approved; simple and correct, no changes needed
-
----
-Explain machine learning to a child.
-<<< needs work; the explanation assumes too much prior knowledge
-```
-
-### 8.12 Complex Structured Feedback (JSON)
-
-```
-@uri local:complex-example
-
-Multi-attribute content with special characters.
-<<< json:{"rating":4.5,"tags":["important","review"],"notes":"Contains \"quoted\" text and; semicolons","scores":{"accuracy":0.9,"relevance":0.85}}
-```
-
-### 8.13 Image with MarkBack Sidecar
-
-**Content file:** `diagram.png` (binary)
-
-**Feedback file:** `diagram.label.txt`
-```
-@uri local:architecture-diagram-v2
-<<< type=diagram; category=architecture; approved=true; reviewer=jane
-```
-
 ---
 
-## 9. MIME Type and File Extensions
+## 11. MIME Type and Encoding
+
+### 11.1 MIME Type
 
 - **MIME type:** `text/markback` (proposed)
-- **File extensions:**
-  - `.mb` - MarkBack files (single or multi-record)
-  - `.label.txt` - Paired feedback files (human-readable fallback)
-  - `.feedback.txt` - Alternative paired feedback files
 
----
+### 11.2 File Extensions
 
-## 10. Encoding
+- `.mb` -- MarkBack files (all modes: inline, compact, sidecar)
+- `name.ext.mb` -- Sidecar annotation files
+
+### 11.3 Encoding
 
 - Files MUST be UTF-8 encoded
 - BOM is optional but discouraged
-- Line endings: LF (`\n`) preferred; CRLF (`\r\n`) accepted and normalized
+- Line endings: LF (`\n`) preferred; CRLF (`\r\n`) accepted and normalized to LF
 
 ---
 
-## 11. Acceptance Checklist
-
-- [ ] **Deterministic parsing:** A parser can identify records with zero guesswork
-  - Headers start with `@`, feedback starts with `<<<`, separator is `---`
-  - No ambiguous delimiters
-
-- [ ] **Lintable:** A linter can count records, detect content vs feedback, validate one-line rule
-  - Clear error codes for all violations
-  - Feedback line unambiguously identified by `<<<` prefix
-
-- [ ] **Unified record model:** Same logical structure across all 4 storage modes
-  - Single-file, multi-record, label-list, and paired-file all produce records with same fields
-
-- [ ] **URIs optional:** Records work without identifiers
-  - URI is optional header, not required for valid record
-
-- [ ] **External content:** Supported via `@source` header
-  - Can reference any file type (images, audio, binary)
-
-- [ ] **Compact label lists:** Efficient bulk labeling via single-line records
-  - `@source ... <<<` on same line for one-record-per-line format
-
-- [ ] **Examples are fixtures:** All examples are valid MarkBack that can be parsed
-  - Copy/paste ready for test suites
-
----
-
-## Appendix A: Grammar (ABNF)
+## 12. ABNF Grammar
 
 ```abnf
-markback-file   = *blank-line record-list
-record-list     = record *(record-sep record) / compact-list
-record-sep      = *blank-line "---" LF *blank-line
+; === File Structure ===
 
-; Full record
-record          = full-record / compact-record
-full-record     = [headers] [content-block] feedback
-headers         = 1*header-line
-header-line     = "@" keyword SP value LF
-keyword         = 1*LOWER
-value           = *VCHAR
+markback-file     = [file-headers *blank-line] record-list
+file-headers      = 1*file-header-line
+file-header-line  = "%" keyword [SP value] LF
 
-; Content block (blank line required before content)
-content-block   = blank-line content
-content         = 1*content-line
-content-line    = *VCHAR LF           ; any line not starting with <<<
-blank-line      = LF
+; === Record List ===
 
-; Feedback (the <<< delimiter and everything after)
-feedback        = "<<<" SP feedback-content LF
-feedback-content = *VCHAR             ; no LF allowed
+record-list       = record *(record-sep record) / compact-list
+record-sep        = *blank-line "---" LF *blank-line
+compact-list      = compact-record *(1*blank-line compact-record)
 
-; Compact record (single line, external source only)
-compact-record  = [uri-line] [by-line] [prior-line] source-feedback-line
-compact-list    = compact-record *(1*blank-line compact-record)
-uri-line        = "@uri" SP value LF
-by-line         = "@by" SP value LF
-prior-line      = "@prior" SP path-with-range LF
-source-feedback-line = "@source" SP path-with-range SP "<<<" SP feedback-content LF
-path-with-range = path [position-range]   ; path with optional position range
-path            = 1*VCHAR             ; ends at space before <<< or position-range
-position-range  = ":" 1*DIGIT [":" 1*DIGIT] ["-" 1*DIGIT [":" 1*DIGIT]]
+; === Records ===
 
-LOWER           = %x61-7A  ; a-z
-SP              = %x20     ; space
-LF              = %x0A     ; line feed
-VCHAR           = %x21-7E / UTF8-NONASCII
+record            = full-record / compact-record
+
+full-record       = [headers] [content-block] feedback-line
+headers           = 1*header-line
+header-line       = "@" keyword SP value LF
+keyword           = 1*LOWER
+value             = *VCHAR
+
+content-block     = blank-line content
+content           = 1*content-line
+content-line      = *VCHAR LF                       ; any line not starting with <<<
+
+blank-line        = LF
+
+; === Feedback ===
+
+feedback-line     = "<<<" SP feedback-content LF
+feedback-content  = *VCHAR                           ; no LF allowed
+
+; === Compact Record ===
+
+compact-record    = [id-line] [by-line] [tag-line] [input-line] file-feedback-line
+id-line           = "@id" SP value LF
+by-line           = "@by" SP value LF
+tag-line          = "@tag" SP value LF
+input-line        = "@input" SP path-with-range LF
+file-feedback-line = "@file" SP path-with-range SP "<<<" SP feedback-content LF
+
+; === Path with Optional Position Range ===
+
+path-with-range   = path [position-range]
+path              = 1*VCHAR                          ; ends at SP before <<< or position-range
+position-range    = ":" 1*DIGIT [":" 1*DIGIT] ["-" 1*DIGIT [":" 1*DIGIT]]
+
+; === Terminals ===
+
+LOWER             = %x61-7A                          ; a-z
+SP                = %x20                             ; space
+LF                = %x0A                             ; line feed
+DIGIT             = %x30-39                          ; 0-9
+VCHAR             = %x21-7E / UTF8-NONASCII
 ```
 
 ---
 
-## Appendix B: Comparison with Alternatives
+## 13. V1 Backward Compatibility
 
-| Feature | MarkBack | YAML | JSON | CSV |
-|---------|----------|------|------|-----|
-| Human-writable | Excellent | Good | Poor | Good |
-| Multi-line content | Native | Needs quoting | Needs escaping | Poor |
-| One-line feedback | Enforced | Not enforced | Not enforced | Natural |
-| Binary references | Native | Manual | Manual | Manual |
-| Lintable structure | Excellent | Good | Excellent | Poor |
+### 13.1 Header Mapping
+
+V1 files are parsed transparently. When a V1 header is encountered, it is mapped to the V2 equivalent and a W010 warning is emitted.
+
+| V1 Header | V2 Header | Notes |
+|-----------|-----------|-------|
+| `@uri` | `@id` | Value preserved as-is; no URI validation in V2 |
+| `@source` | `@file` | Path and ranges preserved |
+| `@prior` | `@input` | Path and ranges preserved |
+
+### 13.2 Compact Record Compatibility
+
+V1 compact records using `@source ... <<<` are recognized alongside V2 `@file ... <<<`. Each V1 compact record emits a W010 warning.
+
+### 13.3 Sidecar Compatibility
+
+V2 uses `name.ext.mb` as the sidecar convention. For backward compatibility, implementations SHOULD also discover V1 sidecar patterns during file discovery:
+
+| Priority | Pattern | Version |
+|----------|---------|---------|
+| 1 | `name.ext.mb` | V2 |
+| 2 | `name.label.txt` | V1 legacy |
+| 3 | `name.feedback.txt` | V1 legacy |
+
+### 13.4 Semantic Changes from V1
+
+- **`@file` + inline content:** In V1, `@source` with inline content was an error (E005). In V2, `@file` with inline content is valid -- the file is provenance and the inline content is a snapshot.
+- **`@id` validation:** In V1, `@uri` required RFC 3986 compliance (E003). In V2, `@id` is a plain string with no format validation.
+
+### 13.5 Migration
+
+To migrate a V1 file to V2:
+1. Replace `@uri` with `@id`
+2. Replace `@source` with `@file`
+3. Replace `@prior` with `@input`
+4. Optionally add `%markback 2` at the top
+5. Optionally add `@tag` headers for categorization
+
+Alternatively, run the file through a V2 normalizer which performs all mappings automatically.
 
 ---
 
-## Appendix C: Changelog
+## 14. Changelog
+
+### v0.2.0 (2026-03-20)
+
+**Header renames:**
+- `@uri` renamed to `@id` (plain string, no URI validation)
+- `@source` renamed to `@file` (provenance reference)
+- `@prior` renamed to `@input` (preceding item reference)
+
+**New features:**
+- `@tag` header for space-separated tags with merge across multiple lines
+- File-level `%` headers: `%markback`, `%scope`, `%covers`
+- Sweep pattern: `%scope` + `%covers` for meaningful absence
+- `@file` + inline content coexistence (file is provenance, content is snapshot)
+- Simplified sidecar convention: `name.ext.mb`
+- Canonical header order: `@id`, `@by`, `@tag`, `@input`, `@file`
+- W010 warning for V1 format detection with transparent mapping
+
+**Removed/retired:**
+- E003 (malformed URI): `@id` has no format validation
+- E005 (content with `@source`): `@file` + inline content now valid
+- `.label.txt` / `.feedback.txt` as primary sidecar convention (retained as V1 legacy discovery)
+- RFC 3986 validation requirement
+
+**Unchanged from V1:**
+- Feedback parsing rules (freeform, structured with `; ` separator, JSON mode with `json:` prefix)
+- Line/character range syntax on `@file` and `@input`
+- `<<<` feedback delimiter semantics
+- `---` record separator semantics
+- All other error codes (E001, E002, E004, E006-E011)
+- All other warning codes (W001-W009)
 
 ### v1.0.0 (2026-01-04)
 - Initial specification release
