@@ -165,6 +165,26 @@ class TestUrlTarget:
                 assert result.exit_code == 0
                 assert Path("page.mb").exists()
 
+    def test_file_uri(self):
+        """file:// URIs should be treated as URIs, not local file lookups."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with runner.isolated_filesystem(temp_dir=tmpdir):
+                result = runner.invoke(
+                    app, ["file://c:/some/bar.txt", "noted"]
+                )
+                assert result.exit_code == 0
+                mb_path = Path("bar.txt.mb")
+                assert mb_path.exists()
+                content = mb_path.read_text()
+                assert "@file file://c:/some/bar.txt" in content
+
+    def test_windows_drive_path_is_not_uri(self):
+        """c:/foo isn't a URI — should fail with 'not found' as a real path."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with runner.isolated_filesystem(temp_dir=tmpdir):
+                result = runner.invoke(app, ["c:/no/such/file.txt"])
+                assert result.exit_code == 1
+
     def test_url_appends_to_existing_mb(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             with runner.isolated_filesystem(temp_dir=tmpdir):

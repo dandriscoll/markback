@@ -68,8 +68,13 @@ def open_editor(path: Path) -> None:
 
 
 def _is_url(target: str) -> bool:
-    """Check if target is an http(s) URL."""
-    return urlparse(target).scheme in ("http", "https")
+    """Check if target is a URI (any scheme of length > 1).
+
+    Length > 1 avoids confusing Windows drive letters (`c:\\path`) with
+    schemes — matches FileRef's own URI heuristic.
+    """
+    scheme = urlparse(target).scheme
+    return len(scheme) > 1
 
 
 def _is_glob(target: str) -> bool:
