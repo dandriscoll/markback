@@ -215,6 +215,67 @@ class TestRoundTrip:
         assert len(reparsed.records) == len(original.records)
 
 
+class TestMultiSegmentWriter:
+    """Tests for multi-segment section writing (one @file, multiple <<<)."""
+
+    def test_groups_records_sharing_file(self):
+        from markback import write_string
+        records = [
+            Record(file=FileRef("./essay.txt"), content="fox", feedback="awkward"),
+            Record(file=FileRef("./essay.txt"), content="ending", feedback="weak"),
+        ]
+        text = write_string(records, version_header=False)
+        assert text.count("@file ./essay.txt") == 1
+        assert "---" not in text
+        assert "<<< awkward" in text
+        assert "<<< weak" in text
+
+    def test_separator_between_different_files(self):
+        from markback import write_string
+        records = [
+            Record(file=FileRef("./a.txt"), content="x", feedback="ok"),
+            Record(file=FileRef("./b.txt"), content="y", feedback="ok"),
+        ]
+        text = write_string(records, version_header=False)
+        assert "---" in text
+
+    def test_id_on_continuation_falls_back_to_separator(self):
+        """Writer doesn't emit per-item @id; falls back to --- for safety."""
+        from markback import write_string
+        records = [
+            Record(file=FileRef("./doc.txt"), content="x", feedback="a"),
+            Record(file=FileRef("./doc.txt"), id="r2", content="y", feedback="b"),
+        ]
+        text = write_string(records, version_header=False)
+        assert "---" in text
+        assert "@id r2" in text
+
+    def test_records_without_file_are_not_grouped(self):
+        from markback import write_string
+        records = [
+            Record(content="first", feedback="ok"),
+            Record(content="second", feedback="ok"),
+        ]
+        text = write_string(records, version_header=False)
+        assert "---" in text
+
+    def test_roundtrip_multi_segment(self):
+        from markback import parse_string, write_string
+        originals = [
+            Record(file=FileRef("./essay.txt"), content="fox", feedback="awkward"),
+            Record(file=FileRef("./essay.txt"), content="ending", feedback="weak"),
+            Record(file=FileRef("./essay.txt"), content="middle", feedback="trim"),
+        ]
+        text = write_string(originals)
+        result = parse_string(text)
+        assert not result.has_errors
+        assert len(result.records) == 3
+        for orig, parsed in zip(originals, result.records):
+            assert str(parsed.file) == str(orig.file)
+            assert parsed.content == orig.content
+            assert parsed.feedback == orig.feedback
+
+
 class TestV1CompatWriter:
     """Tests for V1 backward compat writer functions."""
 

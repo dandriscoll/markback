@@ -343,11 +343,48 @@ Three hyphens on a line by themselves. This is the **record separator**.
 
 **Rules:**
 - Record separator MUST be exactly `---` (no leading/trailing whitespace)
-- Record separator is REQUIRED between full records
+- Record separator is REQUIRED between full records that don't share a section (see 3.4.1)
 - Record separator is OPTIONAL before the first record
 - Record separator is OPTIONAL after the last record
 - Blank lines around separators are ignored
 - Record separator is NOT needed between consecutive compact records
+
+#### 3.4.1 Multi-Segment Sections
+
+Multiple records may share the same `@file` (and other section headers) by writing successive content + `<<<` segments without a `---` separator between them. This is convenient for code-review-style workflows where one source has several distinct comments.
+
+```
+@file ./essay.txt
+
+the lazy fox
+<<< awkward
+
+weak ending
+<<< needs punch
+
+dragging middle paragraph
+<<< trim this
+```
+
+The example above is **three records**, all referencing `./essay.txt`. A `---` separator ends the section; the next record must declare its own headers.
+
+**Rules:**
+- A "section" begins at the start of the file (or right after a `---` separator) and ends at the next `---` (or end of file).
+- Headers `@file`, `@by`, `@tag`, `@input` set in the first record of a section are inherited by all subsequent segments in that section.
+- `@id` is per-record and never inherited. To set an `@id` on a continuation segment, place it immediately after the previous `<<<` line (no blank line in between):
+  ```
+  @file ./doc.txt
+  @id seg1
+
+  first
+  <<< note 1
+  @id seg2
+
+  second
+  <<< note 2
+  ```
+- A compact record (`@file ... <<<`) seeds a section as well; subsequent full segments inherit its `@file`.
+- Per-segment headers override only for that segment; the section's value resumes for the segment after.
 
 ### 3.5 Compact Single-Line Records
 

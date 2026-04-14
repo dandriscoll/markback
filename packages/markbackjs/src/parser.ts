@@ -117,6 +117,10 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
     );
   };
 
+  // sectionHeaders carries forward across <<< boundaries within a section.
+  // A `---` separator clears them. @id is per-record and never inherited.
+  const SECTION_INHERITED = new Set(["file", "by", "tag", "input"]);
+  let sectionHeaders: { [key: string]: string } = {};
   let currentHeaders: { [key: string]: string } = {};
   let currentContentLines: string[] = [];
   let currentStartLine = 1;
@@ -124,6 +128,13 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
   let inContent = false;
   let hadBlankLine = false;
   let pastFileHeaders = false;
+
+  const headersEqual = (a: { [key: string]: string }, b: { [key: string]: string }): boolean => {
+    const aKeys = Object.keys(a);
+    const bKeys = Object.keys(b);
+    if (aKeys.length !== bKeys.length) return false;
+    return aKeys.every((k) => a[k] === b[k]);
+  };
 
   const finalizeRecord = (feedback: string, endLine: number) => {
     const id = currentHeaders.id ?? pendingId;
@@ -162,7 +173,17 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
       }),
     );
 
-    currentHeaders = {};
+    if (Object.keys(sectionHeaders).length === 0) {
+      const inherited: { [key: string]: string } = {};
+      for (const [k, v] of Object.entries(currentHeaders)) {
+        if (SECTION_INHERITED.has(k)) {
+          inherited[k] = v;
+        }
+      }
+      sectionHeaders = inherited;
+    }
+
+    currentHeaders = { ...sectionHeaders };
     currentContentLines = [];
     currentStartLine = endLine + 1;
     pendingId = null;
@@ -213,9 +234,11 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
     }
 
     if (lineType === LineType.SEPARATOR) {
-      if (Object.keys(currentHeaders).length > 0 || currentContentLines.length > 0) {
+      if (currentContentLines.length > 0 || !headersEqual(currentHeaders, sectionHeaders)) {
         addDiagnostic(Severity.ERROR, ErrorCode.E001, "Missing feedback (no <<< delimiter found)", currentStartLine, undefined, records.length);
       }
+      sectionHeaders = {};
+      currentHeaders = {};
       currentStartLine = lineNum + 1;
       pendingId = null;
       inContent = false;
@@ -269,7 +292,20 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
         }),
       );
 
-      currentHeaders = {};
+      // Compact records also seed a section so subsequent records inherit @file.
+      if (Object.keys(sectionHeaders).length === 0) {
+        const inherited: { [key: string]: string } = {};
+        for (const [k, v] of Object.entries(currentHeaders)) {
+          if (SECTION_INHERITED.has(k)) {
+            inherited[k] = v;
+          }
+        }
+        if (fileRef) {
+          inherited.file = fileRef.toString();
+        }
+        sectionHeaders = inherited;
+      }
+      currentHeaders = { ...sectionHeaders };
       currentContentLines = [];
       currentStartLine = lineNum + 1;
       pendingId = null;
@@ -344,7 +380,7 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
     }
   }
 
-  if (Object.keys(currentHeaders).length > 0 || currentContentLines.length > 0) {
+  if (currentContentLines.length > 0 || !headersEqual(currentHeaders, sectionHeaders)) {
     addDiagnostic(Severity.ERROR, ErrorCode.E001, "Missing feedback (no <<< delimiter found)", currentStartLine, undefined, records.length);
   }
 

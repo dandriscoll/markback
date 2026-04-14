@@ -78,6 +78,15 @@ mb https://example.com/blog/post.html "great explanation"
 #   the quick brown fox jumps over the lazy dog
 #   <<< awkward phrasing
 
+# Multi-segment section: several comments on one source, no repeated headers.
+#   @file ./essay.txt
+#
+#   the lazy fox
+#   <<< awkward
+#
+#   weak ending
+#   <<< needs punch
+
 # With input reference (what produced the file)
 mb output.txt "accurate" --input prompt.txt
 

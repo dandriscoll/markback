@@ -138,6 +138,9 @@ def parse_string(
         ))
 
     # State for parsing
+    # section_headers carries forward across <<< boundaries within a section.
+    # A `---` separator clears them. @id is per-record and never inherited.
+    section_headers: dict[str, str] = {}
     current_headers: dict[str, str] = {}
     current_content_lines: list[str] = []
     current_start_line: int = 1
@@ -146,10 +149,12 @@ def parse_string(
     had_blank_line: bool = False
     past_file_headers: bool = False
 
+    SECTION_INHERITED = ("file", "by", "tag", "input")
+
     def finalize_record(feedback: str, end_line: int):
-        """Create a record from current state."""
+        """Create a record from current state, then reset for next segment."""
         nonlocal current_headers, current_content_lines, current_start_line
-        nonlocal pending_id, in_content, had_blank_line
+        nonlocal pending_id, in_content, had_blank_line, section_headers
 
         record_id = current_headers.get("id") or pending_id
         by = current_headers.get("by")
@@ -184,8 +189,16 @@ def parse_string(
         )
         records.append(record)
 
-        # Reset state
-        current_headers = {}
+        # Section headers: if not yet established, capture from the first
+        # finalized record's headers. Per-segment headers (id) are excluded.
+        if not section_headers:
+            section_headers = {
+                k: v for k, v in current_headers.items()
+                if k in SECTION_INHERITED
+            }
+
+        # Reset state for the next segment, inheriting section headers.
+        current_headers = section_headers.copy()
         current_content_lines = []
         current_start_line = end_line + 1
         pending_id = None
@@ -250,7 +263,9 @@ def parse_string(
             past_file_headers = True
 
         if line_type == LineType.SEPARATOR:
-            if current_headers or current_content_lines:
+            # `---` ends the section: clear inheritable headers entirely.
+            # Error only if user added headers/content since last finalize.
+            if current_content_lines or current_headers != section_headers:
                 add_diagnostic(
                     Severity.ERROR,
                     ErrorCode.E001,
@@ -258,6 +273,8 @@ def parse_string(
                     current_start_line,
                     record_idx=len(records),
                 )
+            section_headers = {}
+            current_headers = {}
             current_start_line = line_num + 1
             pending_id = None
             in_content = False
@@ -319,7 +336,16 @@ def parse_string(
             )
             records.append(record)
 
-            current_headers = {}
+            # Compact records also seed a section: subsequent records that
+            # don't redeclare @file inherit it.
+            if not section_headers:
+                section_headers = {
+                    k: v for k, v in current_headers.items()
+                    if k in SECTION_INHERITED
+                }
+                # The compact line itself supplied @file:
+                section_headers["file"] = str(file_ref)
+            current_headers = section_headers.copy()
             current_content_lines = []
             current_start_line = line_num + 1
             pending_id = None
@@ -408,7 +434,7 @@ def parse_string(
             continue
 
     # Check for unterminated record at end of file
-    if current_headers or current_content_lines:
+    if current_content_lines or current_headers != section_headers:
         add_diagnostic(
             Severity.ERROR,
             ErrorCode.E001,

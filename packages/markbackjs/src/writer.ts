@@ -58,6 +58,30 @@ export function writeRecordCanonical(record: Record, preferCompact = true): stri
   return lines.join("\n");
 }
 
+function sectionSignature(record: Record): string {
+  return JSON.stringify([
+    record.file ? record.file.toString() : null,
+    record.by,
+    record.input ? record.input.toString() : null,
+    [...record.tags],
+  ]);
+}
+
+function canContinueSection(prev: Record, current: Record): boolean {
+  if (prev.file === null || current.file === null) return false;
+  return (
+    sectionSignature(prev) === sectionSignature(current)
+    && prev.hasInlineContent()
+    && current.hasInlineContent()
+    && current.id === null
+  );
+}
+
+function writeContinuation(record: Record): string {
+  const lines = normalizeContentLines(record.content ?? "");
+  return ["", "", ...lines, `<<< ${record.feedback}`].join("\n");
+}
+
 export function writeRecordsMulti(records: Record[], preferCompact = true): string {
   if (records.length === 0) {
     return "";
@@ -65,20 +89,26 @@ export function writeRecordsMulti(records: Record[], preferCompact = true): stri
 
   const resultParts: string[] = [];
   let prevWasCompact = false;
+  let prevRecord: Record | null = null;
 
   records.forEach((record, index) => {
     const isCompact = preferCompact && record.file !== null && !record.hasInlineContent();
 
-    if (index > 0) {
-      if (isCompact && prevWasCompact) {
-        resultParts.push("\n");
-      } else {
-        resultParts.push("\n---\n");
+    if (index > 0 && prevRecord !== null && canContinueSection(prevRecord, record)) {
+      resultParts.push(writeContinuation(record));
+    } else {
+      if (index > 0) {
+        if (isCompact && prevWasCompact) {
+          resultParts.push("\n");
+        } else {
+          resultParts.push("\n---\n");
+        }
       }
+      resultParts.push(writeRecordCanonical(record, preferCompact));
     }
 
-    resultParts.push(writeRecordCanonical(record, preferCompact));
     prevWasCompact = isCompact;
+    prevRecord = record;
   });
 
   return resultParts.join("") + "\n";

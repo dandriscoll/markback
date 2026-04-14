@@ -65,6 +65,46 @@ def _write_record_canonical(
     return '\n'.join(lines)
 
 
+def _section_signature(record: Record) -> tuple:
+    """Headers that determine section grouping for multi-segment writes."""
+    return (
+        str(record.file) if record.file else None,
+        record.by,
+        str(record.input) if record.input else None,
+        tuple(record.tags),
+    )
+
+
+def _can_continue_section(prev: Record, current: Record) -> bool:
+    """True if `current` can be written as a continuation segment of `prev`.
+
+    Continuations skip the `---` separator and inherit section headers.
+    Requirements:
+    - Records share a @file (sections are about a single source)
+    - Both have inline content (each segment is an excerpt)
+    - Continuation has no @id of its own — the parser supports per-item @id,
+      but the writer omits it to keep the compact form unambiguous.
+    """
+    if prev.file is None or current.file is None:
+        return False
+    return (
+        _section_signature(prev) == _section_signature(current)
+        and prev.has_inline_content()
+        and current.has_inline_content()
+        and current.id is None
+    )
+
+
+def _write_continuation(record: Record) -> str:
+    """Render a continuation segment: blank line, content, <<< feedback."""
+    content_lines = record.content.split('\n')
+    while content_lines and not content_lines[0].strip():
+        content_lines.pop(0)
+    while content_lines and not content_lines[-1].strip():
+        content_lines.pop()
+    return '\n'.join(['', '', *content_lines, f'<<< {record.feedback}'])
+
+
 def _write_file_headers(
     version: bool = True,
     scope: Optional[list[str]] = None,
@@ -139,6 +179,7 @@ def write_string(
 
     record_parts: list[str] = []
     prev_was_compact = False
+    prev_record: Optional[Record] = None
 
     for i, record in enumerate(records):
         is_compact = (
@@ -147,15 +188,19 @@ def write_string(
             and not record.has_inline_content()
         )
 
-        if i > 0:
-            if is_compact and prev_was_compact:
-                record_parts.append("\n")
-            else:
-                record_parts.append("\n---\n")
+        if i > 0 and prev_record is not None and _can_continue_section(prev_record, record):
+            # Continuation segment: no `---`, no repeated headers.
+            record_parts.append(_write_continuation(record))
+        else:
+            if i > 0:
+                if is_compact and prev_was_compact:
+                    record_parts.append("\n")
+                else:
+                    record_parts.append("\n---\n")
+            record_parts.append(_write_record_canonical(record, prefer_compact=is_compact))
 
-        record_str = _write_record_canonical(record, prefer_compact=is_compact)
-        record_parts.append(record_str)
         prev_was_compact = is_compact
+        prev_record = record
 
     parts.append(''.join(record_parts))
 

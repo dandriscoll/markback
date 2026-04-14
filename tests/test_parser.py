@@ -167,6 +167,97 @@ class TestParseString:
         assert result.records[0].by == "dan@example.com"
 
 
+class TestMultiSegment:
+    """Tests for multi-segment sections (one @file, multiple <<<)."""
+
+    def test_inherits_file_across_segments(self):
+        text = (
+            "@file ./essay.txt\n\n"
+            "the lazy fox\n<<< awkward\n\n"
+            "weak ending\n<<< needs punch\n"
+        )
+        result = parse_string(text)
+        assert not result.has_errors
+        assert len(result.records) == 2
+        assert all(str(r.file) == "./essay.txt" for r in result.records)
+        assert result.records[0].content == "the lazy fox"
+        assert result.records[0].feedback == "awkward"
+        assert result.records[1].content == "weak ending"
+        assert result.records[1].feedback == "needs punch"
+
+    def test_separator_resets_section(self):
+        text = (
+            "@file ./essay.txt\n\n"
+            "fox\n<<< awkward\n\n"
+            "ending\n<<< weak\n"
+            "---\n"
+            "@file ./code.py\n\n"
+            "import\n<<< unused\n"
+        )
+        result = parse_string(text)
+        assert not result.has_errors
+        assert len(result.records) == 3
+        assert str(result.records[0].file) == "./essay.txt"
+        assert str(result.records[1].file) == "./essay.txt"
+        assert str(result.records[2].file) == "./code.py"
+
+    def test_inherits_by_and_tags(self):
+        text = (
+            "@by alice\n@tag draft\n@file ./doc.txt\n\n"
+            "first\n<<< note 1\n\n"
+            "second\n<<< note 2\n"
+        )
+        result = parse_string(text)
+        assert not result.has_errors
+        assert len(result.records) == 2
+        for r in result.records:
+            assert r.by == "alice"
+            assert r.tags == ["draft"]
+            assert str(r.file) == "./doc.txt"
+
+    def test_id_is_per_record_not_inherited(self):
+        text = (
+            "@id seg1\n@file ./doc.txt\n\n"
+            "first\n<<< note 1\n\n"
+            "second\n<<< note 2\n"
+        )
+        result = parse_string(text)
+        assert not result.has_errors
+        assert result.records[0].id == "seg1"
+        # Second segment does not inherit @id
+        assert result.records[1].id is None
+
+    def test_per_segment_id_override(self):
+        # Per-item @id immediately follows previous <<< (no blank line)
+        text = (
+            "@file ./doc.txt\n\n"
+            "first\n<<< note 1\n"
+            "@id seg2\n\n"
+            "second\n<<< note 2\n"
+        )
+        result = parse_string(text)
+        assert not result.has_errors
+        assert len(result.records) == 2
+        assert result.records[0].id is None
+        assert result.records[1].id == "seg2"
+
+    def test_compact_record_seeds_section(self):
+        text = (
+            "@file ./doc.txt <<< first\n\n"
+            "second segment\n<<< second\n"
+        )
+        result = parse_string(text)
+        assert not result.has_errors
+        assert len(result.records) == 2
+        assert str(result.records[0].file) == "./doc.txt"
+        assert str(result.records[1].file) == "./doc.txt"
+
+    def test_separator_after_clean_finalize_is_not_an_error(self):
+        text = "@file ./doc.txt\n\ncontent\n<<< feedback\n---\n"
+        result = parse_string(text)
+        assert not result.has_errors
+
+
 class TestFileLevelHeaders:
     """Tests for file-level % headers."""
 
