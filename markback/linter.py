@@ -192,6 +192,58 @@ def lint_line_range(
     return diagnostics
 
 
+def lint_reply_to(
+    records: list[Record],
+    source_file: Optional[Path],
+) -> list[Diagnostic]:
+    """Check @reply-to targets: must point at an @id in the same file; no cycles."""
+    diagnostics: list[Diagnostic] = []
+
+    id_to_idx: dict[str, int] = {}
+    for idx, record in enumerate(records):
+        if record.id and record.id not in id_to_idx:
+            id_to_idx[record.id] = idx
+
+    for idx, record in enumerate(records):
+        if not record.reply_to:
+            continue
+
+        if record.reply_to not in id_to_idx:
+            diagnostics.append(Diagnostic(
+                file=source_file,
+                line=record._start_line,
+                column=None,
+                severity=Severity.WARNING,
+                code=WarningCode.W011,
+                message=f"@reply-to points at unknown id: {record.reply_to}",
+                record_index=idx,
+            ))
+            continue
+
+        # Walk up the chain to detect cycles.
+        seen = {idx}
+        cursor = id_to_idx[record.reply_to]
+        while True:
+            if cursor in seen:
+                diagnostics.append(Diagnostic(
+                    file=source_file,
+                    line=record._start_line,
+                    column=None,
+                    severity=Severity.WARNING,
+                    code=WarningCode.W011,
+                    message=f"@reply-to forms a cycle through: {record.reply_to}",
+                    record_index=idx,
+                ))
+                break
+            seen.add(cursor)
+            parent = records[cursor].reply_to
+            if not parent or parent not in id_to_idx:
+                break
+            cursor = id_to_idx[parent]
+
+    return diagnostics
+
+
 def lint_canonical_format(
     records: list[Record],
     original_text: str,
@@ -247,6 +299,8 @@ def lint_string(
             result.diagnostics.extend(lint_input_exists(record, base_path, idx))
 
         result.diagnostics.extend(lint_line_range(record, idx))
+
+    result.diagnostics.extend(lint_reply_to(result.records, source_file))
 
     if check_canonical and result.records and not result.has_errors:
         result.diagnostics.extend(lint_canonical_format(

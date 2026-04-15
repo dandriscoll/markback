@@ -41,6 +41,7 @@ A MarkBack **record** is the fundamental unit. Every record has:
 |-------|----------|-------------|
 | `feedback` | Yes | Text after the `<<<` delimiter (always one line) |
 | `id` | No | Plain string identifier for the record |
+| `reply_to` | No | `@id` of the record this one replies to (threading) |
 | `by` | No | Freeform identifier for who provided the feedback |
 | `tags` | No | Space-separated tags for categorization |
 | `input` | No | Reference to an item that preceded the content (e.g., a prompt) |
@@ -81,6 +82,7 @@ Header lines appear at the start of a record and begin with `@`. They define met
 
 ```
 @id <string-value>
+@reply-to <id-of-parent-record>
 @by <freeform-text>
 @tag <space-separated-tags>
 @input <path-or-uri>
@@ -88,13 +90,13 @@ Header lines appear at the start of a record and begin with `@`. They define met
 ```
 
 **Rules:**
-- Header lines MUST start with `@` followed by a lowercase keyword
+- Header lines MUST start with `@` followed by a lowercase keyword (hyphens permitted, e.g., `@reply-to`)
 - One space MUST separate the keyword from the value
 - Values extend to end of line (trailing whitespace trimmed)
 - Unknown headers SHOULD generate a warning (W002, forward compatibility)
 - Headers are case-sensitive (`@id` not `@ID`)
 
-**Canonical header order:** `@id`, `@by`, `@tag`, `@input`, `@file`
+**Canonical header order:** `@id`, `@reply-to`, `@by`, `@tag`, `@input`, `@file`
 
 #### 3.1.1 `@id` Header
 
@@ -111,6 +113,27 @@ Defines the identifier for this record. The value is a plain string with no vali
 - No URI validation is performed (unlike V1's `@uri` which required RFC 3986)
 - Optional -- records without `@id` are valid (W006 warning)
 - SHOULD be unique within a file (W001 warning on duplicates)
+
+#### 3.1.1a `@reply-to` Header
+
+Marks this record as a reply to another record. The value is the `@id` of the parent record.
+
+```
+@id c1
+@file ./login.py:42 <<< this branch never fires
+
+@id c2
+@reply-to c1
+@file ./login.py:42 <<< it does — covered by test_login_edge()
+```
+
+**Rules:**
+- Value is the `@id` of another record, resolved within the same file
+- A record with `@reply-to` SHOULD also declare its own `@id` so it can be replied to in turn
+- `@reply-to` is per-record and is NOT inherited by continuation segments of a multi-segment section
+- Threading is reconstructed by walking `@reply-to` chains; tools render replies nested under their parent
+- Linters SHOULD warn (W011) if the target id is not present in the file, or if a cycle is detected
+- Optional — records without `@reply-to` are top-level comments
 
 #### 3.1.2 `@by` Header
 
@@ -831,6 +854,7 @@ Discovery priority:
 | W008 | Non-canonical formatting detected |
 | W009 | `@input` referenced file not found |
 | W010 | V1 format detected (old header mapped to V2 equivalent) |
+| W011 | `@reply-to` points at an unknown `@id` or forms a cycle |
 
 ### 9.3 Retired Error Codes
 

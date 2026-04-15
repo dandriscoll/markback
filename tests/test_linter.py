@@ -261,3 +261,42 @@ class TestByHeader:
         result = lint_string(text, check_sources=False, check_canonical=False)
         assert not result.has_errors
         assert result.records[0].by == "reviewer@example.com"
+
+
+class TestReplyToLint:
+    """Tests for @reply-to lint rules (W011)."""
+
+    def test_valid_reply(self):
+        text = (
+            "@id c1\n@file ./a.txt <<< initial\n"
+            "@id c2\n@reply-to c1\n@file ./a.txt <<< a reply\n"
+        )
+        result = lint_string(text, check_sources=False, check_canonical=False)
+        w011 = [d for d in result.diagnostics if d.code == WarningCode.W011]
+        assert not w011
+
+    def test_orphan_reply_to_warns(self):
+        text = "@id c1\n@reply-to ghost\n@file ./a.txt <<< oops\n"
+        result = lint_string(text, check_sources=False, check_canonical=False)
+        w011 = [d for d in result.diagnostics if d.code == WarningCode.W011]
+        assert len(w011) == 1
+        assert "ghost" in w011[0].message
+
+    def test_cycle_detected(self):
+        text = (
+            "@id a\n@reply-to b\n@file ./x.txt <<< one\n"
+            "@id b\n@reply-to a\n@file ./x.txt <<< two\n"
+        )
+        result = lint_string(text, check_sources=False, check_canonical=False)
+        w011 = [d for d in result.diagnostics if d.code == WarningCode.W011]
+        assert any("cycle" in d.message for d in w011)
+
+    def test_deep_thread_ok(self):
+        text = (
+            "@id a\n@file ./x.txt <<< root\n"
+            "@id b\n@reply-to a\n@file ./x.txt <<< child\n"
+            "@id c\n@reply-to b\n@file ./x.txt <<< grandchild\n"
+        )
+        result = lint_string(text, check_sources=False, check_canonical=False)
+        w011 = [d for d in result.diagnostics if d.code == WarningCode.W011]
+        assert not w011

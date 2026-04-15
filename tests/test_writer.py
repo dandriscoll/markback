@@ -310,3 +310,46 @@ class TestV1CompatWriter:
     def test_normalize_file_alias(self):
         result = normalize_file(FIXTURES_DIR / "minimal.mb")
         assert "<<< positive" in result
+
+
+class TestReplyToWriter:
+    """Tests for @reply-to writer output."""
+
+    def test_reply_to_in_compact(self):
+        record = Record(
+            feedback="my reply",
+            id="c2",
+            reply_to="c1",
+            file=FileRef("./a.txt"),
+        )
+        out = write_record_canonical(record)
+        assert "@id c2" in out
+        assert "@reply-to c1" in out
+        # @reply-to appears immediately after @id
+        lines = out.splitlines()
+        id_idx = next(i for i, l in enumerate(lines) if l.startswith("@id"))
+        rt_idx = next(i for i, l in enumerate(lines) if l.startswith("@reply-to"))
+        assert rt_idx == id_idx + 1
+
+    def test_reply_to_in_full(self):
+        record = Record(
+            feedback="my reply",
+            id="c2",
+            reply_to="c1",
+            content="quoted text",
+        )
+        out = write_record_canonical(record, prefer_compact=False)
+        assert "@reply-to c1" in out
+
+    def test_round_trip_preserves_reply_to(self):
+        text = (
+            "%markback 2\n\n"
+            "@id c1\n@file ./a.txt <<< initial\n"
+            "@id c2\n@reply-to c1\n@file ./a.txt <<< a reply\n"
+        )
+        result = parse_string(text)
+        assert [r.reply_to for r in result.records] == [None, "c1"]
+
+        written = write_string(result.records)
+        re_parsed = parse_string(written)
+        assert [r.reply_to for r in re_parsed.records] == [None, "c1"]

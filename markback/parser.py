@@ -16,13 +16,13 @@ from .types import (
 
 
 # V2 known header keywords
-KNOWN_HEADERS = {"id", "by", "file", "input", "tag"}
+KNOWN_HEADERS = {"id", "by", "file", "input", "tag", "reply-to"}
 
 # V1 header mapping for backward compatibility
 V1_HEADER_MAP = {"uri": "id", "source": "file", "prior": "input"}
 
 # Patterns
-HEADER_PATTERN = re.compile(r"^@([a-z]+)\s+(.+)$")
+HEADER_PATTERN = re.compile(r"^@([a-z][a-z-]*)\s+(.+)$")
 FEEDBACK_DELIMITER = "<<<"
 RECORD_SEPARATOR = "---"
 COMPACT_PATTERN = re.compile(r"^@file\s+(.+?)\s+<<<\s+(.*)$")
@@ -158,6 +158,7 @@ def parse_string(
 
         record_id = current_headers.get("id") or pending_id
         by = current_headers.get("by")
+        reply_to = current_headers.get("reply-to")
         file_str = current_headers.get("file")
         file_ref = FileRef(file_str) if file_str else None
         input_str = current_headers.get("input")
@@ -179,6 +180,7 @@ def parse_string(
             feedback=feedback,
             id=record_id,
             by=by,
+            reply_to=reply_to,
             file=file_ref,
             input=input_ref,
             tags=tags,
@@ -317,6 +319,7 @@ def parse_string(
 
             record_id = pending_id or current_headers.get("id")
             by = current_headers.get("by")
+            reply_to = current_headers.get("reply-to")
             input_str = current_headers.get("input")
             input_ref = FileRef(input_str) if input_str else None
             tag_str = current_headers.get("tag")
@@ -326,6 +329,7 @@ def parse_string(
                 feedback=feedback or "",
                 id=record_id,
                 by=by,
+                reply_to=reply_to,
                 file=file_ref,
                 input=input_ref,
                 tags=tags,

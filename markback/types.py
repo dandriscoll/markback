@@ -41,6 +41,7 @@ class WarningCode(Enum):
     W008 = "W008"  # Non-canonical formatting detected
     W009 = "W009"  # @input file not found
     W010 = "W010"  # V1 format detected
+    W011 = "W011"  # @reply-to points at unknown id (or cycle)
 
 
 @dataclass
@@ -186,6 +187,7 @@ class Record:
     feedback: str
     id: Optional[str] = None
     by: Optional[str] = None
+    reply_to: Optional[str] = None
     file: Optional[FileRef] = None
     input: Optional[FileRef] = None
     tags: list[str] = field(default_factory=list)
@@ -239,6 +241,7 @@ class Record:
         return {
             "id": self.id,
             "by": self.by,
+            "reply_to": self.reply_to,
             "file": str(self.file) if self.file else None,
             "input": str(self.input) if self.input else None,
             "tags": self.tags,

@@ -31,6 +31,8 @@ def _write_record_canonical(
         # Compact format: headers on own lines, then @file ... <<<
         if record.id:
             lines.append(f"@id {record.id}")
+        if record.reply_to:
+            lines.append(f"@reply-to {record.reply_to}")
         if record.by:
             lines.append(f"@by {record.by}")
         if record.tags:
@@ -42,6 +44,8 @@ def _write_record_canonical(
         # Full format
         if record.id:
             lines.append(f"@id {record.id}")
+        if record.reply_to:
+            lines.append(f"@reply-to {record.reply_to}")
         if record.by:
             lines.append(f"@by {record.by}")
         if record.tags:
@@ -92,6 +96,7 @@ def _can_continue_section(prev: Record, current: Record) -> bool:
         and prev.has_inline_content()
         and current.has_inline_content()
         and current.id is None
+        and current.reply_to is None
     )
 
 
@@ -282,6 +287,8 @@ def write_label_file(record: Record) -> str:
     lines: list[str] = []
     if record.id:
         lines.append(f"@id {record.id}")
+    if record.reply_to:
+        lines.append(f"@reply-to {record.reply_to}")
     if record.by:
         lines.append(f"@by {record.by}")
     if record.tags:

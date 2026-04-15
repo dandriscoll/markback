@@ -430,3 +430,51 @@ class TestParseFile:
     def test_parse_freeform_feedback(self):
         result = parse_file(FIXTURES_DIR / "freeform_feedback.mb")
         assert len(result.records) == 4
+
+
+class TestReplyTo:
+    """Tests for @reply-to threaded replies."""
+
+    def test_reply_to_header(self):
+        text = (
+            "@id c1\n@file ./a.txt <<< nit: awkward\n"
+            "@id c2\n@reply-to c1\n@file ./a.txt <<< agreed, rewriting\n"
+        )
+        result = parse_string(text)
+
+        assert len(result.records) == 2
+        assert result.records[0].reply_to is None
+        assert result.records[1].reply_to == "c1"
+        # No unknown-header warnings for @reply-to
+        w002 = [d for d in result.diagnostics if d.code == WarningCode.W002]
+        assert not w002
+
+    def test_reply_to_in_full_record(self):
+        text = (
+            "@id c1\n\nSome excerpt.\n<<< thoughts?\n"
+            "---\n"
+            "@id c2\n@reply-to c1\n\nSame excerpt.\n<<< my reply\n"
+        )
+        result = parse_string(text)
+        assert result.records[1].reply_to == "c1"
+
+    def test_reply_to_not_inherited_across_section(self):
+        """@reply-to is per-record; it must not leak to the next segment."""
+        text = (
+            "@file ./a.txt\n@id c1\n@reply-to parent\n\nexcerpt one\n<<< reply\n"
+            "\n\nexcerpt two\n<<< sibling, not a reply\n"
+        )
+        result = parse_string(text)
+
+        assert len(result.records) == 2
+        assert result.records[0].reply_to == "parent"
+        assert result.records[1].reply_to is None
+
+    def test_reply_to_hyphen_header_regex(self):
+        """Ensure the updated header regex accepts hyphenated keyword."""
+        text = "@id c2\n@reply-to c1\n@file ./x.txt <<< ok\n"
+        result = parse_string(text)
+        # No E006 malformed header
+        e006 = [d for d in result.diagnostics if d.code == ErrorCode.E006]
+        assert not e006
+        assert result.records[0].reply_to == "c1"
