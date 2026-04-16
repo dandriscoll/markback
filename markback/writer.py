@@ -7,6 +7,17 @@ from typing import Optional
 from .types import Record, FileRef
 
 
+def _feedback_is_multiline(feedback: str) -> bool:
+    return '\n' in feedback
+
+
+def _format_feedback(feedback: str) -> str:
+    """Render feedback for appending after `<<< `. Handles fenced multi-line."""
+    if _feedback_is_multiline(feedback):
+        return '"""\n' + feedback + '\n"""'
+    return feedback
+
+
 class OutputMode(Enum):
     """Output format modes."""
     SINGLE = "single"
@@ -25,6 +36,7 @@ def _write_record_canonical(
         prefer_compact
         and record.file is not None
         and not record.has_inline_content()
+        and not _feedback_is_multiline(record.feedback)
     )
 
     if use_compact:
@@ -64,7 +76,7 @@ def _write_record_canonical(
                 content_lines.pop()
             lines.extend(content_lines)
 
-        lines.append(f"<<< {record.feedback}")
+        lines.append(f"<<< {_format_feedback(record.feedback)}")
 
     return '\n'.join(lines)
 
@@ -107,7 +119,7 @@ def _write_continuation(record: Record) -> str:
         content_lines.pop(0)
     while content_lines and not content_lines[-1].strip():
         content_lines.pop()
-    return '\n'.join(['', '', *content_lines, f'<<< {record.feedback}'])
+    return '\n'.join(['', '', *content_lines, f'<<< {_format_feedback(record.feedback)}'])
 
 
 def _write_file_headers(
@@ -295,7 +307,7 @@ def write_label_file(record: Record) -> str:
         lines.append(f"@tag {' '.join(record.tags)}")
     if record.input:
         lines.append(f"@input {record.input}")
-    lines.append(f"<<< {record.feedback}")
+    lines.append(f"<<< {_format_feedback(record.feedback)}")
     return '\n'.join(lines) + "\n"
 
 

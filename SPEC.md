@@ -288,7 +288,7 @@ The `<<<` delimiter marks where feedback begins. Everything after `<<<` (on that
 **Rules:**
 - `<<<` MUST be followed by exactly one space, then feedback content
 - Feedback content extends to end of line
-- Feedback MUST be a single line (no embedded newlines)
+- Feedback is single-line by default (see §3.3.3 for the fenced multi-line form)
 - `<<<` can appear:
   - On its own line (full records)
   - After `@file <path>` on the same line (compact records)
@@ -306,6 +306,38 @@ Feedback content is **freeform text by default**. Any text after `<<< ` is valid
 ```
 
 All characters except newlines are allowed. No escaping required for freeform text.
+
+#### 3.3.1a Fenced Multi-Line Feedback
+
+When the text immediately after `<<< ` is exactly `"""`, the feedback becomes a **fenced block** and spans multiple lines until a line consisting solely of `"""` closes it.
+
+**Full form:**
+```
+@id c1
+@file ./login.py:42
+<<< """
+This branch looks dead, but I want to double-check before
+suggesting removal — can you point me at any tests that
+exercise it?
+"""
+```
+
+**Compact form** (the compact one-liner opens the fence; body and closer follow):
+```
+@id c1
+@file ./login.py:42 <<< """
+multi-line
+feedback
+"""
+```
+
+**Rules:**
+- The fence opener MUST be exactly `<<< """` (or `@file <path> <<< """` for compact records). Any other content on the opener line is treated as ordinary single-line feedback that happens to contain `"""`.
+- The fence closer is a line whose only content (after trimming trailing whitespace) is `"""`.
+- All lines between opener and closer become the feedback body, joined by `\n`. Internal blank lines and `"""` appearing inline within a line are preserved verbatim.
+- An unclosed fence is an error (E012).
+- An empty fenced block (opener immediately followed by closer) is an error (E009), same as empty single-line feedback.
+- Writers emit the fenced form only when the feedback string contains a newline; otherwise single-line form is used. Multi-line feedback forces the full (non-compact) record layout because the closer must appear on its own line.
 
 #### 3.3.2 Structured Feedback (Optional Convention)
 
@@ -839,6 +871,7 @@ Discovery priority:
 | E009 | Empty feedback (nothing after `<<<`) |
 | E010 | Missing blank line before inline content (content starts with `@`) |
 | E011 | Invalid line/character range (end position before start position) |
+| E012 | Unclosed fenced feedback block (missing closing `"""`) |
 
 ### 9.2 Warnings (SHOULD fix)
 

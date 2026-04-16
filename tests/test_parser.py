@@ -470,6 +470,64 @@ class TestReplyTo:
         assert result.records[0].reply_to == "parent"
         assert result.records[1].reply_to is None
 
+    def test_multiline_feedback_full(self):
+        text = (
+            '@id c1\n@file ./a.txt\n<<< """\n'
+            'line one\n'
+            'line two\n'
+            'line three\n'
+            '"""\n'
+        )
+        result = parse_string(text)
+        assert len(result.records) == 1
+        assert result.records[0].feedback == "line one\nline two\nline three"
+        assert not result.has_errors
+
+    def test_multiline_feedback_compact(self):
+        text = (
+            '@id c1\n@file ./a.txt <<< """\n'
+            'first\n'
+            'second\n'
+            '"""\n'
+        )
+        result = parse_string(text)
+        assert len(result.records) == 1
+        assert result.records[0].feedback == "first\nsecond"
+        assert result.records[0].file == FileRef("./a.txt")
+        assert not result.has_errors
+
+    def test_multiline_feedback_unclosed(self):
+        text = (
+            '@id c1\n@file ./a.txt\n<<< """\n'
+            'no closer here\n'
+        )
+        result = parse_string(text)
+        e012 = [d for d in result.diagnostics if d.code == ErrorCode.E012]
+        assert len(e012) == 1
+
+    def test_multiline_feedback_empty(self):
+        text = '@id c1\n@file ./a.txt\n<<< """\n"""\n'
+        result = parse_string(text)
+        e009 = [d for d in result.diagnostics if d.code == ErrorCode.E009]
+        assert len(e009) == 1
+
+    def test_multiline_feedback_preserves_blank_lines(self):
+        text = (
+            '@id c1\n@file ./a.txt\n<<< """\n'
+            'para one\n'
+            '\n'
+            'para two\n'
+            '"""\n'
+        )
+        result = parse_string(text)
+        assert result.records[0].feedback == "para one\n\npara two"
+
+    def test_single_line_feedback_still_works(self):
+        """Ensure existing single-line feedback is unchanged."""
+        text = '@id c1\n@file ./a.txt <<< short answer\n'
+        result = parse_string(text)
+        assert result.records[0].feedback == "short answer"
+
     def test_reply_to_hyphen_header_regex(self):
         """Ensure the updated header regex accepts hyphenated keyword."""
         text = "@id c2\n@reply-to c1\n@file ./x.txt <<< ok\n"

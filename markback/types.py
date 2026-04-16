@@ -27,6 +27,7 @@ class ErrorCode(Enum):
     E009 = "E009"  # Empty feedback (nothing after <<< )
     E010 = "E010"  # Missing blank line before inline content
     E011 = "E011"  # Invalid line range (end < start)
+    E012 = "E012"  # Unclosed fenced feedback block (""")
 
 
 class WarningCode(Enum):

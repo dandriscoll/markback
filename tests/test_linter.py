@@ -263,6 +263,27 @@ class TestByHeader:
         assert result.records[0].by == "reviewer@example.com"
 
 
+class TestMultilineFeedbackLint:
+    """Tests for fenced multi-line feedback lint rules."""
+
+    def test_valid_fence(self):
+        text = '@id c1\n@file ./a.txt\n<<< """\nbody\n"""\n'
+        result = lint_string(text, check_sources=False, check_canonical=False)
+        assert not result.has_errors
+
+    def test_unclosed_fence_errors(self):
+        text = '@id c1\n@file ./a.txt\n<<< """\nno closer\n'
+        result = lint_string(text, check_sources=False, check_canonical=False)
+        e012 = [d for d in result.diagnostics if d.code == ErrorCode.E012]
+        assert len(e012) == 1
+
+    def test_empty_fence_errors(self):
+        text = '@id c1\n@file ./a.txt\n<<< """\n"""\n'
+        result = lint_string(text, check_sources=False, check_canonical=False)
+        e009 = [d for d in result.diagnostics if d.code == ErrorCode.E009]
+        assert len(e009) == 1
+
+
 class TestReplyToLint:
     """Tests for @reply-to lint rules (W011)."""
 

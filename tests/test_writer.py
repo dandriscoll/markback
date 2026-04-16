@@ -341,6 +341,42 @@ class TestReplyToWriter:
         out = write_record_canonical(record, prefer_compact=False)
         assert "@reply-to c1" in out
 
+    def test_multiline_feedback_emits_fence(self):
+        record = Record(
+            feedback="line one\nline two",
+            id="c1",
+            file=FileRef("./a.txt"),
+        )
+        out = write_record_canonical(record)
+        assert '<<< """' in out
+        assert out.rstrip().endswith('"""')
+        # Must not be in compact form (compact puts <<< on the @file line)
+        assert "@file ./a.txt <<<" not in out
+
+    def test_singleline_feedback_stays_compact(self):
+        record = Record(
+            feedback="short",
+            id="c1",
+            file=FileRef("./a.txt"),
+        )
+        out = write_record_canonical(record)
+        assert "@file ./a.txt <<< short" in out
+        assert '"""' not in out
+
+    def test_multiline_feedback_round_trip(self):
+        text = (
+            "%markback 2\n\n"
+            '@id c1\n@file ./a.txt\n<<< """\n'
+            "alpha\nbeta\ngamma\n"
+            '"""\n'
+        )
+        result = parse_string(text)
+        assert result.records[0].feedback == "alpha\nbeta\ngamma"
+        written = write_string(result.records)
+        assert written == text
+        re_parsed = parse_string(written)
+        assert re_parsed.records[0].feedback == "alpha\nbeta\ngamma"
+
     def test_round_trip_preserves_reply_to(self):
         text = (
             "%markback 2\n\n"

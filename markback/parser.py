@@ -24,6 +24,7 @@ V1_HEADER_MAP = {"uri": "id", "source": "file", "prior": "input"}
 # Patterns
 HEADER_PATTERN = re.compile(r"^@([a-z][a-z-]*)\s+(.+)$")
 FEEDBACK_DELIMITER = "<<<"
+FENCE_MARKER = '"""'
 RECORD_SEPARATOR = "---"
 COMPACT_PATTERN = re.compile(r"^@file\s+(.+?)\s+<<<\s+(.*)$")
 V1_COMPACT_PATTERN = re.compile(r"^@source\s+(.+?)\s+<<<\s+(.*)$")
@@ -80,6 +81,21 @@ def parse_header(line: str) -> tuple[Optional[str], Optional[str], Optional[str]
     if not match:
         return None, None, f"Malformed header syntax: {stripped}"
     return match.group(1), match.group(2), None
+
+
+def _read_fence_body(lines: list[str], start_idx: int) -> tuple[str, int, bool]:
+    # Read lines starting at start_idx until a closing triple-quote line.
+    # Returns (body, next_idx, closed): body is the raw content without the
+    # closing fence; next_idx is the line index *after* the closer (or
+    # len(lines) if unclosed).
+    body: list[str] = []
+    i = start_idx
+    while i < len(lines):
+        if lines[i].rstrip() == FENCE_MARKER:
+            return '\n'.join(body), i + 1, True
+        body.append(lines[i])
+        i += 1
+    return '\n'.join(body), i, False
 
 
 def parse_compact_record(line: str) -> tuple[Optional[FileRef], Optional[str], Optional[str], bool]:
@@ -309,7 +325,26 @@ def parse_string(
                     line_num,
                 )
 
-            if feedback is not None and not feedback:
+            end_line = line_num
+            if feedback == FENCE_MARKER:
+                feedback, new_line_num, closed = _read_fence_body(lines, line_num)
+                if not closed:
+                    add_diagnostic(
+                        Severity.ERROR,
+                        ErrorCode.E012,
+                        'Unclosed fenced feedback block (missing """)',
+                        line_num,
+                    )
+                if not feedback:
+                    add_diagnostic(
+                        Severity.ERROR,
+                        ErrorCode.E009,
+                        "Empty feedback (empty fenced block)",
+                        line_num,
+                    )
+                end_line = new_line_num
+                line_num = new_line_num
+            elif feedback is not None and not feedback:
                 add_diagnostic(
                     Severity.ERROR,
                     ErrorCode.E009,
@@ -336,7 +371,7 @@ def parse_string(
                 content=None,
                 _source_file=source_file,
                 _start_line=current_start_line,
-                _end_line=line_num,
+                _end_line=end_line,
             )
             records.append(record)
 
@@ -351,7 +386,7 @@ def parse_string(
                 section_headers["file"] = str(file_ref)
             current_headers = section_headers.copy()
             current_content_lines = []
-            current_start_line = line_num + 1
+            current_start_line = end_line + 1
             pending_id = None
             in_content = False
             had_blank_line = False
@@ -404,6 +439,7 @@ def parse_string(
 
         if line_type == LineType.FEEDBACK:
             stripped = line.rstrip()
+            fence_end_line = line_num
             if stripped == FEEDBACK_DELIMITER:
                 add_diagnostic(
                     Severity.ERROR,
@@ -412,6 +448,24 @@ def parse_string(
                     line_num,
                 )
                 feedback = ""
+            elif stripped == FEEDBACK_DELIMITER + " " + FENCE_MARKER:
+                feedback, new_line_num, closed = _read_fence_body(lines, line_num)
+                if not closed:
+                    add_diagnostic(
+                        Severity.ERROR,
+                        ErrorCode.E012,
+                        'Unclosed fenced feedback block (missing """)',
+                        line_num,
+                    )
+                if not feedback:
+                    add_diagnostic(
+                        Severity.ERROR,
+                        ErrorCode.E009,
+                        "Empty feedback (empty fenced block)",
+                        line_num,
+                    )
+                fence_end_line = new_line_num
+                line_num = new_line_num
             elif stripped.startswith(FEEDBACK_DELIMITER + " "):
                 feedback = stripped[len(FEEDBACK_DELIMITER) + 1:]
             else:
@@ -429,7 +483,7 @@ def parse_string(
                         record_idx=len(records),
                     )
 
-            finalize_record(feedback, line_num)
+            finalize_record(feedback, fence_end_line)
             continue
 
         if line_type == LineType.CONTENT:
