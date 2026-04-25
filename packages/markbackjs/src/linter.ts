@@ -199,6 +199,66 @@ function lintLineRange(record: MarkbackRecord, recordIdx: number): Diagnostic[] 
   return diagnostics;
 }
 
+function lintReplyTo(records: MarkbackRecord[], sourceFile?: string | null): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+
+  const idToIdx: { [key: string]: number } = {};
+  records.forEach((record, idx) => {
+    if (record.id && idToIdx[record.id] === undefined) {
+      idToIdx[record.id] = idx;
+    }
+  });
+
+  records.forEach((record, idx) => {
+    if (!record.replyTo) {
+      return;
+    }
+
+    if (idToIdx[record.replyTo] === undefined) {
+      diagnostics.push(
+        new Diagnostic({
+          file: sourceFile ?? null,
+          line: record._startLine ?? null,
+          column: null,
+          severity: Severity.WARNING,
+          code: WarningCode.W011,
+          message: `@reply-to points at unknown id: ${record.replyTo}`,
+          recordIndex: idx,
+        }),
+      );
+      return;
+    }
+
+    // Walk up the chain to detect cycles.
+    const seen = new Set<number>([idx]);
+    let cursor = idToIdx[record.replyTo];
+    while (true) {
+      if (seen.has(cursor)) {
+        diagnostics.push(
+          new Diagnostic({
+            file: sourceFile ?? null,
+            line: record._startLine ?? null,
+            column: null,
+            severity: Severity.WARNING,
+            code: WarningCode.W011,
+            message: `@reply-to forms a cycle through: ${record.replyTo}`,
+            recordIndex: idx,
+          }),
+        );
+        break;
+      }
+      seen.add(cursor);
+      const parent = records[cursor].replyTo;
+      if (!parent || idToIdx[parent] === undefined) {
+        break;
+      }
+      cursor = idToIdx[parent];
+    }
+  });
+
+  return diagnostics;
+}
+
 function lintCanonicalFormat(records: MarkbackRecord[], originalText: string, file?: string | null): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
 
@@ -263,6 +323,8 @@ export function lintString(text: string, options: LintOptions = {}): ParseResult
 
     result.diagnostics.push(...lintLineRange(record, idx));
   });
+
+  result.diagnostics.push(...lintReplyTo(result.records, sourceFile));
 
   if (checkCanonical && result.records.length > 0 && !result.hasErrors) {
     result.diagnostics.push(...lintCanonicalFormat(result.records, text, sourceFile));

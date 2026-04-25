@@ -1,10 +1,11 @@
 import { Diagnostic, ErrorCode, FileRef, ParseResult, Record as MarkbackRecord, Severity, WarningCode } from "./types";
 
-const KNOWN_HEADERS = new Set(["id", "by", "file", "input", "tag"]);
+const KNOWN_HEADERS = new Set(["id", "by", "file", "input", "tag", "reply-to"]);
 const V1_HEADER_MAP: { [key: string]: string } = { uri: "id", source: "file", prior: "input" };
 
-const HEADER_PATTERN = /^@([a-z]+)\s+(.+)$/;
+const HEADER_PATTERN = /^@([a-z][a-z-]*)\s+(.+)$/;
 const FEEDBACK_DELIMITER = "<<<";
+const FENCE_MARKER = '"""';
 const RECORD_SEPARATOR = "---";
 const COMPACT_PATTERN = /^@file\s+(.+?)\s+<<<\s+(.*)$/;
 const V1_COMPACT_PATTERN = /^@source\s+(.+?)\s+<<<\s+(.*)$/;
@@ -83,6 +84,19 @@ function parseCompactRecord(line: string): [FileRef | null, string | null, strin
   return [null, null, `Invalid compact record syntax: ${line}`, false];
 }
 
+function readFenceBody(lines: string[], startIdx: number): [string, number, boolean] {
+  const body: string[] = [];
+  let i = startIdx;
+  while (i < lines.length) {
+    if (stripLine(lines[i]) === FENCE_MARKER) {
+      return [body.join("\n"), i + 1, true];
+    }
+    body.push(lines[i]);
+    i += 1;
+  }
+  return [body.join("\n"), i, false];
+}
+
 export function parseString(text: string, sourceFile?: string | null): ParseResult {
   let lines = text.split("\n");
   if (lines.length > 0 && lines[lines.length - 1] === "") {
@@ -139,6 +153,7 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
   const finalizeRecord = (feedback: string, endLine: number) => {
     const id = currentHeaders.id ?? pendingId;
     const by = currentHeaders.by ?? null;
+    const replyTo = currentHeaders["reply-to"] ?? null;
     const fileStr = currentHeaders.file;
     const fileRef = fileStr ? new FileRef(fileStr) : null;
     const inputStr = currentHeaders.input;
@@ -162,6 +177,7 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
       new MarkbackRecord({
         feedback,
         id: id ?? null,
+        replyTo,
         by,
         file: fileRef,
         input: inputRef,
@@ -266,11 +282,25 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
         addDiagnostic(Severity.WARNING, WarningCode.W010, "V1 format detected: @source mapped to @file", lineNum);
       }
 
-      if (feedback !== null && feedback.length === 0) {
+      let endLine = lineNum;
+      let actualFeedback = feedback;
+      if (actualFeedback === FENCE_MARKER) {
+        const [fenceBody, newLineNum, closed] = readFenceBody(lines, lineNum);
+        if (!closed) {
+          addDiagnostic(Severity.ERROR, ErrorCode.E012, 'Unclosed fenced feedback block (missing """)', lineNum);
+        }
+        if (!fenceBody) {
+          addDiagnostic(Severity.ERROR, ErrorCode.E009, "Empty feedback (empty fenced block)", lineNum);
+        }
+        actualFeedback = fenceBody;
+        endLine = newLineNum;
+        lineNum = newLineNum;
+      } else if (actualFeedback !== null && actualFeedback.length === 0) {
         addDiagnostic(Severity.ERROR, ErrorCode.E009, "Empty feedback (nothing after <<< )", lineNum);
       }
 
       const id = pendingId ?? currentHeaders.id ?? null;
+      const replyTo = currentHeaders["reply-to"] ?? null;
       const by = currentHeaders.by ?? null;
       const inputStr = currentHeaders.input;
       const inputRef = inputStr ? new FileRef(inputStr) : null;
@@ -279,8 +309,9 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
 
       records.push(
         new MarkbackRecord({
-          feedback: feedback ?? "",
+          feedback: actualFeedback ?? "",
           id,
+          replyTo,
           by,
           file: fileRef,
           input: inputRef,
@@ -288,7 +319,7 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
           content: null,
           _sourceFile: sourceFile ?? null,
           _startLine: currentStartLine,
-          _endLine: lineNum,
+          _endLine: endLine,
         }),
       );
 
@@ -354,9 +385,21 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
     if (lineType === LineType.FEEDBACK) {
       const stripped = stripLine(line);
       let feedback = "";
+      let fenceEndLine = lineNum;
 
       if (stripped === FEEDBACK_DELIMITER) {
         addDiagnostic(Severity.ERROR, ErrorCode.E009, "Empty feedback (nothing after <<< )", lineNum);
+      } else if (stripped === `${FEEDBACK_DELIMITER} ${FENCE_MARKER}`) {
+        const [fenceBody, newLineNum, closed] = readFenceBody(lines, lineNum);
+        if (!closed) {
+          addDiagnostic(Severity.ERROR, ErrorCode.E012, 'Unclosed fenced feedback block (missing """)', lineNum);
+        }
+        if (!fenceBody) {
+          addDiagnostic(Severity.ERROR, ErrorCode.E009, "Empty feedback (empty fenced block)", lineNum);
+        }
+        feedback = fenceBody;
+        fenceEndLine = newLineNum;
+        lineNum = newLineNum;
       } else if (stripped.startsWith(`${FEEDBACK_DELIMITER} `)) {
         feedback = stripped.slice(FEEDBACK_DELIMITER.length + 1);
       } else {
@@ -370,7 +413,7 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
         }
       }
 
-      finalizeRecord(feedback, lineNum);
+      finalizeRecord(feedback, fenceEndLine);
       continue;
     }
 

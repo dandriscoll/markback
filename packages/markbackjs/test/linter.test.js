@@ -50,11 +50,11 @@ test("lintFile: minimal fixture", () => {
   assert.equal(result.hasErrors, false);
 });
 
-test("lintFile: malformed uri fixture", () => {
+test("lintFile: malformed uri fixture (V2: @id is plain string, no E003)", () => {
   const filePath = path.join(fixturesDir, "errors", "malformed_uri.mb");
-  const result = lintFile(filePath, { checkSources: false });
-  assert.equal(result.hasErrors, true);
-  assert.equal(findCode(result.diagnostics, ErrorCode.E003).length, 1);
+  const result = lintFile(filePath, { checkSources: false, checkCanonical: false });
+  // V2 retired E003: @id is a plain string with no format validation
+  assert.equal(findCode(result.diagnostics, ErrorCode.E003).length, 0);
 });
 
 test("lintFiles: directory fixtures", () => {
@@ -262,4 +262,117 @@ test("lintString: mixed column specification", () => {
   assert.equal(result.records[0].source.startColumn, 5);
   assert.equal(result.records[0].source.endLine, 20);
   assert.equal(result.records[0].source.endColumn, null);
+});
+
+// @reply-to tests
+
+test("lintString: @reply-to header parsed", () => {
+  const text =
+    "@id c1\n@file ./a.txt <<< original comment\n" +
+    "@id c2\n@reply-to c1\n@file ./a.txt <<< agreed, rewriting\n";
+  const result = lintString(text, { checkSources: false, checkCanonical: false });
+  assert.equal(result.hasErrors, false);
+  assert.equal(result.records[0].replyTo, null);
+  assert.equal(result.records[1].replyTo, "c1");
+  // No unknown-header warnings for @reply-to
+  assert.equal(findCode(result.diagnostics, WarningCode.W002).length, 0);
+});
+
+test("lintString: @reply-to in full record", () => {
+  const text =
+    "@id c1\n\nSome content.\n<<< original\n\n---\n" +
+    "@id c2\n@reply-to c1\n\nSame excerpt.\n<<< my reply\n";
+  const result = lintString(text, { checkSources: false, checkCanonical: false });
+  assert.equal(result.records[1].replyTo, "c1");
+});
+
+test("lintString: @reply-to not inherited across section", () => {
+  const text =
+    "@file ./a.txt\n@id c1\n@reply-to parent\n\nexcerpt one\n<<< reply\n" +
+    "\nsecond segment\n<<< note\n";
+  const result = lintString(text, { checkSources: false, checkCanonical: false });
+  assert.equal(result.records[0].replyTo, "parent");
+  assert.equal(result.records[1].replyTo, null);
+});
+
+test("lintString: @reply-to orphan warns W011", () => {
+  const text = "@id c1\n@reply-to ghost\n@file ./a.txt <<< oops\n";
+  const result = lintString(text, { checkSources: false, checkCanonical: false });
+  assert.equal(findCode(result.diagnostics, WarningCode.W011).length, 1);
+});
+
+test("lintString: @reply-to valid target no W011", () => {
+  const text =
+    "@id parent\n@file ./a.txt <<< original\n" +
+    "@id child\n@reply-to parent\n@file ./a.txt <<< a reply\n";
+  const result = lintString(text, { checkSources: false, checkCanonical: false });
+  assert.equal(findCode(result.diagnostics, WarningCode.W011).length, 0);
+});
+
+test("lintString: @reply-to cycle warns W011", () => {
+  const text =
+    "@id a\n@reply-to b\n@file ./x.txt <<< one\n" +
+    "@id b\n@reply-to a\n@file ./x.txt <<< two\n";
+  const result = lintString(text, { checkSources: false, checkCanonical: false });
+  assert.ok(findCode(result.diagnostics, WarningCode.W011).length > 0);
+});
+
+test("lintString: @reply-to chain no false W011", () => {
+  const text =
+    "@id a\n@file ./x.txt <<< root\n" +
+    "@id b\n@reply-to a\n@file ./x.txt <<< child\n" +
+    "@id c\n@reply-to b\n@file ./x.txt <<< grandchild\n";
+  const result = lintString(text, { checkSources: false, checkCanonical: false });
+  assert.equal(findCode(result.diagnostics, WarningCode.W011).length, 0);
+});
+
+test("lintString: hyphen header regex accepts @reply-to", () => {
+  const text = "@id c2\n@reply-to c1\n@file ./x.txt <<< ok\n";
+  const result = lintString(text, { checkSources: false, checkCanonical: false });
+  // Should not produce unknown header warning for reply-to
+  assert.equal(findCode(result.diagnostics, WarningCode.W002).length, 0);
+  assert.equal(result.records[0].replyTo, "c1");
+});
+
+// Fenced multi-line feedback tests
+
+test("lintString: fenced feedback full record", () => {
+  const text =
+    '@id c1\n@file ./a.txt\n<<< """\n' +
+    "line one\nline two\n" +
+    '"""\n';
+  const result = lintString(text, { checkSources: false, checkCanonical: false });
+  assert.equal(result.hasErrors, false);
+  assert.equal(result.records[0].feedback, "line one\nline two");
+});
+
+test("lintString: fenced feedback compact record", () => {
+  const text =
+    '@id c1\n@file ./a.txt <<< """\n' +
+    "multi-line\nfeedback\n" +
+    '"""\n';
+  const result = lintString(text, { checkSources: false, checkCanonical: false });
+  assert.equal(result.hasErrors, false);
+  assert.equal(result.records[0].feedback, "multi-line\nfeedback");
+});
+
+test("lintString: unclosed fence E012", () => {
+  const text =
+    '@id c1\n@file ./a.txt\n<<< """\n' +
+    "no closer\n";
+  const result = lintString(text, { checkSources: false, checkCanonical: false });
+  assert.equal(findCode(result.diagnostics, ErrorCode.E012).length, 1);
+});
+
+test("lintString: empty fenced block E009", () => {
+  const text = '@id c1\n@file ./a.txt\n<<< """\n"""\n';
+  const result = lintString(text, { checkSources: false, checkCanonical: false });
+  assert.equal(findCode(result.diagnostics, ErrorCode.E009).length, 1);
+});
+
+test("lintString: single-line feedback unchanged by fence logic", () => {
+  const text = '@id c1\n@file ./a.txt\n<<< simple feedback\n';
+  const result = lintString(text, { checkSources: false, checkCanonical: false });
+  assert.equal(result.hasErrors, false);
+  assert.equal(result.records[0].feedback, "simple feedback");
 });

@@ -1,5 +1,16 @@
 import { Record } from "./types";
 
+function feedbackIsMultiline(feedback: string): boolean {
+  return feedback.includes("\n");
+}
+
+function formatFeedback(feedback: string): string {
+  if (feedbackIsMultiline(feedback)) {
+    return `"""\n${feedback}\n"""`;
+  }
+  return feedback;
+}
+
 function normalizeContentLines(content: string): string[] {
   const lines = content.split("\n");
   while (lines.length > 0 && !lines[0].trim()) {
@@ -14,11 +25,14 @@ function normalizeContentLines(content: string): string[] {
 export function writeRecordCanonical(record: Record, preferCompact = true): string {
   const lines: string[] = [];
 
-  const useCompact = preferCompact && record.file !== null && !record.hasInlineContent();
+  const useCompact = preferCompact && record.file !== null && !record.hasInlineContent() && !feedbackIsMultiline(record.feedback);
 
   if (useCompact) {
     if (record.id) {
       lines.push(`@id ${record.id}`);
+    }
+    if (record.replyTo) {
+      lines.push(`@reply-to ${record.replyTo}`);
     }
     if (record.by) {
       lines.push(`@by ${record.by}`);
@@ -33,6 +47,9 @@ export function writeRecordCanonical(record: Record, preferCompact = true): stri
   } else {
     if (record.id) {
       lines.push(`@id ${record.id}`);
+    }
+    if (record.replyTo) {
+      lines.push(`@reply-to ${record.replyTo}`);
     }
     if (record.by) {
       lines.push(`@by ${record.by}`);
@@ -52,7 +69,7 @@ export function writeRecordCanonical(record: Record, preferCompact = true): stri
       lines.push(...normalizeContentLines(record.content));
     }
 
-    lines.push(`<<< ${record.feedback}`);
+    lines.push(`<<< ${formatFeedback(record.feedback)}`);
   }
 
   return lines.join("\n");
@@ -74,12 +91,13 @@ function canContinueSection(prev: Record, current: Record): boolean {
     && prev.hasInlineContent()
     && current.hasInlineContent()
     && current.id === null
+    && current.replyTo === null
   );
 }
 
 function writeContinuation(record: Record): string {
   const lines = normalizeContentLines(record.content ?? "");
-  return ["", "", ...lines, `<<< ${record.feedback}`].join("\n");
+  return ["", "", ...lines, `<<< ${formatFeedback(record.feedback)}`].join("\n");
 }
 
 export function writeRecordsMulti(records: Record[], preferCompact = true): string {

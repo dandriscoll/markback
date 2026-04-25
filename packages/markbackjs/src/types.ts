@@ -18,6 +18,7 @@ export enum ErrorCode {
   E009 = "E009",
   E010 = "E010",
   E011 = "E011",
+  E012 = "E012",
 }
 
 export enum WarningCode {
@@ -31,6 +32,7 @@ export enum WarningCode {
   W008 = "W008",
   W009 = "W009",
   W010 = "W010",
+  W011 = "W011",
 }
 
 export type DiagnosticCode = ErrorCode | WarningCode;
@@ -217,6 +219,7 @@ export const SourceRef = FileRef;
 export interface RecordInit {
   feedback: string;
   id?: string | null;
+  replyTo?: string | null;
   by?: string | null;
   file?: FileRef | null;
   input?: FileRef | null;
@@ -231,6 +234,7 @@ export interface RecordInit {
 export class Record {
   feedback: string;
   id: string | null;
+  replyTo: string | null;
   by: string | null;
   file: FileRef | null;
   input: FileRef | null;
@@ -244,6 +248,7 @@ export class Record {
   constructor(init: RecordInit) {
     this.feedback = init.feedback;
     this.id = init.id ?? null;
+    this.replyTo = init.replyTo ?? null;
     this.by = init.by ?? null;
     this.file = init.file ?? null;
     this.input = init.input ?? null;
@@ -277,6 +282,7 @@ export class Record {
   toDict(): UnknownMap {
     return {
       id: this.id,
+      reply_to: this.replyTo,
       by: this.by,
       file: this.file ? this.file.toString() : null,
       input: this.input ? this.input.toString() : null,
