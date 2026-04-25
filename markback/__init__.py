@@ -1,5 +1,7 @@
 """MarkBack V2: A compact format for content + feedback."""
 
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
 from .types import (
     Diagnostic,
     ErrorCode,
@@ -41,7 +43,10 @@ from .linter import (
     summarize_results,
 )
 
-__version__ = "0.2.1"
+try:
+    __version__ = _pkg_version("markback")
+except PackageNotFoundError:
+    __version__ = "0+unknown"
 
 __all__ = [
     # V2 Types
