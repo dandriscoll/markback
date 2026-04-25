@@ -407,6 +407,7 @@ def _add_multi(
         err_console.print(f"Wrote {len(records)} record(s) to {output_path}")
     else:
         collected: list[Record] = []
+        output_path: Optional[Path] = None
         for i, match in enumerate(matches, 1):
             if print_content:
                 path = Path(match)
@@ -430,10 +431,11 @@ def _add_multi(
                         content=_read_inline_content(Path(match)),
                     )
                 )
+                if output_path is None:
+                    output_path = get_feedback_path(_output_dir_for(matches))
+                write(output_path, collected, scope=scope, covers=covers)
 
         if collected:
-            output_path = get_feedback_path(_output_dir_for(matches))
-            write(output_path, collected, scope=scope, covers=covers)
             err_console.print(f"Wrote {len(collected)} record(s) to {output_path}")
         else:
             err_console.print("No feedback entered.")
