@@ -16,7 +16,7 @@ work. CLI, Python, Node, a browser editor, and a VS Code extension.
 - **Try it without installing** — [markback.org/try-it](https://markback.org/try-it)
 - **Install the CLI** — `pip install markback` or `npm install markbackjs`
 - **Read the format** — [Specification](https://markback.org/format/spec)
-- **Comment from your editor** — [VS Code extension v0.1](./packages/markback-vscode/)
+- **Comment from your editor** — [VS Code extension v0.1](https://github.com/dandriscoll/markback/tree/main/packages/markback-vscode)
 
 ## Installation
 
