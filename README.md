@@ -1,6 +1,22 @@
-# MarkBack V2
+# MarkBack
 
-A compact, human-writable format for storing content paired with feedback/labels.
+> **Comments for anything. In plain text. In git.**
+
+[![PyPI](https://img.shields.io/pypi/v/markback.svg)](https://pypi.org/project/markback/)
+[![npm](https://img.shields.io/npm/v/markbackjs.svg)](https://www.npmjs.com/package/markbackjs)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+
+MarkBack is a tiny text format for leaving feedback on any file —
+text, code, images, PDFs — that lints, diffs, and lives next to the
+work. CLI, Python, Node, a browser editor, and a VS Code extension.
+
+## Start here
+
+- **Try it without installing** — [markback.org/try-it](https://markback.org/try-it)
+- **Install the CLI** — `pip install markback` or `npm install markbackjs`
+- **Read the format** — [Specification](https://markback.org/format/spec)
+- **Comment from your editor** — [VS Code extension v0.1](./packages/markback-vscode/)
 
 ## Installation
 
