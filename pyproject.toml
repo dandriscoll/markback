@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "markback"
 version = "0.2.1"
-description = "A compact, human-writable format for storing content paired with feedback/labels"
+description = "MarkBack — comments for anything, in plain text, in git."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
@@ -25,16 +25,16 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
     "Topic :: Text Processing :: Markup",
 ]
-keywords = ["labeling", "feedback", "llm", "annotation", "markdown", "data-labeling"]
+keywords = ["labeling", "feedback", "llm", "annotation", "markdown", "data-labeling", "evaluation", "prompt-engineering", "linter"]
 dependencies = [
     "typer>=0.9.0",
     "rich>=13.0.0",
 ]
 
 [project.urls]
-Homepage = "https://github.com/dandriscoll/markback"
+Homepage = "https://markback.org"
 Repository = "https://github.com/dandriscoll/markback"
-Documentation = "https://github.com/dandriscoll/markback#readme"
+Documentation = "https://markback.org/format/spec"
 Issues = "https://github.com/dandriscoll/markback/issues"
 
 [project.optional-dependencies]
