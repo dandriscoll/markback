@@ -1,0 +1,122 @@
+{
+  "name": "markback-vscode",
+  "displayName": "MarkBack",
+  "description": "Highlight text in any file and add MarkBack feedback that persists to a sidecar .mb file.",
+  "version": "0.1.0",
+  "publisher": "dandriscoll",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dandriscoll/markback.git",
+    "directory": "packages/markback-vscode"
+  },
+  "engines": {
+    "vscode": "^1.100.0",
+    "node": ">=18"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "markback",
+    "annotation",
+    "feedback",
+    "comments",
+    "labeling"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "markback.commentSelection",
+        "title": "MarkBack: Comment on Selection"
+      },
+      {
+        "command": "markback.saveComment",
+        "title": "MarkBack: Save Comment",
+        "enablement": "!commentIsEmpty"
+      },
+      {
+        "command": "markback.cancelDraft",
+        "title": "Cancel"
+      },
+      {
+        "command": "markback.showOutput",
+        "title": "MarkBack: Show Output Log"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "markback.commentSelection",
+        "key": "ctrl+shift+m",
+        "mac": "cmd+shift+m",
+        "when": "editorTextFocus && editorHasSelection"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "markback.commentSelection",
+          "when": "editorHasSelection",
+          "group": "9_cutcopypaste@99"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "markback.saveComment",
+          "when": "false"
+        },
+        {
+          "command": "markback.cancelDraft",
+          "when": "false"
+        }
+      ],
+      "comments/commentThread/context": [
+        {
+          "command": "markback.saveComment",
+          "group": "inline@1",
+          "when": "commentController == markback && commentThreadIsEmpty"
+        },
+        {
+          "command": "markback.cancelDraft",
+          "group": "inline@2",
+          "when": "commentController == markback && commentThreadIsEmpty"
+        },
+        {
+          "command": "markback.saveComment",
+          "group": "inline@1",
+          "when": "commentController == markback && !commentThreadIsEmpty"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "MarkBack",
+      "properties": {
+        "markback.author": {
+          "type": "string",
+          "default": "",
+          "description": "Identifier written as @by on every comment. If empty, falls back to `git config user.email`, then to no @by header."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch",
+    "clean": "rm -rf dist",
+    "pretest": "npm run compile",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "markbackjs": "file:../markbackjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.100.0",
+    "typescript": "^5.4.0"
+  }
+}
