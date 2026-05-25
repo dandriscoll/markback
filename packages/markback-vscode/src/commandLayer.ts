@@ -65,9 +65,15 @@ async function runOpenSidecar(
     return;
   }
   const sidecarPath = sidecarPathFor(sourceUri.fsPath);
+
+  const recordId = thread ? deps.plane.findStateFor(thread)?.parentRecordId ?? null : null;
+
   try {
     const doc = await vscode.workspace.openTextDocument(sidecarPath);
-    await vscode.window.showTextDocument(doc, { preview: false });
+    const editor = await vscode.window.showTextDocument(doc, { preview: false });
+    if (recordId) {
+      jumpToRecord(editor, doc, recordId, deps);
+    }
   } catch (err: unknown) {
     const msg = (err as Error).message;
     deps.logger.error(`openSidecar: ${msg}`);
@@ -75,6 +81,27 @@ async function runOpenSidecar(
       `MarkBack: cannot open ${sidecarPath} — ${msg}`,
     );
   }
+}
+
+function jumpToRecord(
+  editor: vscode.TextEditor,
+  doc: vscode.TextDocument,
+  recordId: string,
+  deps: Deps,
+): void {
+  const needle = `@id ${recordId}`;
+  const offset = doc.getText().indexOf(needle);
+  if (offset < 0) {
+    deps.logger.warn(`[command] openSidecar: could not locate record ${recordId} in sidecar`);
+    return;
+  }
+  const position = doc.positionAt(offset);
+  editor.selection = new vscode.Selection(position, position);
+  editor.revealRange(
+    new vscode.Range(position, position),
+    vscode.TextEditorRevealType.InCenter,
+  );
+  deps.logger.info(`[command] openSidecar: jumped to record ${recordId}`);
 }
 
 async function runCommentSelection(deps: Deps): Promise<void> {

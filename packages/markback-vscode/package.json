@@ -2,7 +2,7 @@
   "name": "markback-vscode",
   "displayName": "MarkBack",
   "description": "Highlight text in any file and add MarkBack feedback that persists to a sidecar .mb file.",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "dandriscoll",
   "license": "MIT",
   "repository": {
