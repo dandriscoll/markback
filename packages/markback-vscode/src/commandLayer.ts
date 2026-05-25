@@ -87,32 +87,77 @@ async function runSaveComment(reply: vscode.CommentReply, deps: Deps): Promise<v
   }
 
   const state = deps.plane.findStateFor(reply.thread);
-  if (!state) {
-    deps.logger.error("saveComment fired on a thread the plane does not track");
-    vscode.window.showErrorMessage("MarkBack: internal — thread not tracked.");
+  if (state) {
+    try {
+      const { record } = await deps.repo.addReply({
+        sidecarPath: state.sidecarPath,
+        parentId: state.parentRecordId,
+        feedback: text,
+        by: author,
+      });
+      if (!record.id) {
+        throw new Error("internal: addReply returned a record without an id");
+      }
+      deps.plane.appendReplyToState({
+        state,
+        replyRecordId: record.id,
+        body: text,
+        author,
+      });
+    } catch (err: unknown) {
+      const msg = (err as Error).message;
+      deps.logger.error(`saveComment(reply): ${msg}`);
+      vscode.window.showErrorMessage(`MarkBack: failed to save reply — ${msg}`);
+    }
     return;
   }
 
+  await runGutterAdd(reply, text, author, deps);
+}
+
+async function runGutterAdd(
+  reply: vscode.CommentReply,
+  text: string,
+  author: string | null,
+  deps: Deps,
+): Promise<void> {
+  deps.logger.info("[command] saveComment (gutter add)");
+  const thread = reply.thread;
+  if (!thread.range) {
+    deps.logger.error("[command] gutter add: thread has no range");
+    vscode.window.showErrorMessage("MarkBack: cannot determine line for this comment.");
+    return;
+  }
+  const sourceUri = thread.uri;
+  if (sourceUri.scheme !== "file") {
+    deps.logger.error(`[command] gutter add: unsupported uri scheme ${sourceUri.scheme}`);
+    vscode.window.showErrorMessage("MarkBack: this file type does not support sidecar comments.");
+    return;
+  }
   try {
-    const { record } = await deps.repo.addReply({
-      sidecarPath: state.sidecarPath,
-      parentId: state.parentRecordId,
+    const sidecarPath = `${sourceUri.fsPath}.mb`;
+    const { record } = await deps.repo.addRecord({
+      sidecarPath,
+      sourceAbsPath: sourceUri.fsPath,
+      range: vsRangeToRangeLike(thread.range),
       feedback: text,
       by: author,
     });
     if (!record.id) {
-      throw new Error("internal: addReply returned a record without an id");
+      throw new Error("internal: addRecord returned a record without an id");
     }
-    deps.plane.appendReplyToState({
-      state,
-      replyRecordId: record.id,
+    deps.plane.adoptThread({
+      thread,
+      sourceUri,
+      range: thread.range,
+      parentRecordId: record.id,
       body: text,
       author,
     });
   } catch (err: unknown) {
     const msg = (err as Error).message;
-    deps.logger.error(`saveComment(reply): ${msg}`);
-    vscode.window.showErrorMessage(`MarkBack: failed to save reply — ${msg}`);
+    deps.logger.error(`saveComment(gutter): ${msg}`);
+    vscode.window.showErrorMessage(`MarkBack: failed to save comment — ${msg}`);
   }
 }
 
@@ -122,10 +167,9 @@ function runCancelDraft(
 ): void {
   deps.logger.info("[command] cancelDraft invoked");
   const thread = isCommentReply(replyOrThread) ? replyOrThread.thread : replyOrThread;
-  const discarded = deps.plane.discardDraftByThread(thread);
-  if (!discarded) {
-    deps.logger.warn("[command] cancelDraft fired on a non-draft thread");
-  }
+  if (deps.plane.discardDraftByThread(thread)) return;
+  if (deps.plane.disposeUntrackedEmptyThread(thread)) return;
+  deps.logger.warn("[command] cancelDraft fired on a tracked persisted thread; ignored");
 }
 
 function isCommentReply(

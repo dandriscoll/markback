@@ -41,6 +41,15 @@ export class CommentControlPlane {
       placeHolder: "e.g. awkward phrasing; needs=clarity",
     };
 
+    this.controller.commentingRangeProvider = {
+      provideCommentingRanges(document, _token) {
+        if (document.uri.scheme !== "file") return [];
+        if (isSidecar(document.uri.fsPath)) return [];
+        if (document.lineCount === 0) return [];
+        return [new vscode.Range(0, 0, document.lineCount - 1, 0)];
+      },
+    };
+
     this.decorationType = vscode.window.createTextEditorDecorationType({
       backgroundColor: new vscode.ThemeColor("editor.findMatchHighlightBackground"),
       border: "1px solid",
@@ -235,6 +244,49 @@ export class CommentControlPlane {
     const newComment = makeComment(args.body, args.author);
     args.state.thread.comments = [...args.state.thread.comments, newComment];
     args.state.recordIds.push(args.replyRecordId);
+  }
+
+  adoptThread(args: {
+    thread: vscode.CommentThread;
+    sourceUri: vscode.Uri;
+    range: vscode.Range;
+    parentRecordId: string;
+    body: string;
+    author: string | null;
+  }): ThreadState {
+    const sourceAbs = args.sourceUri.fsPath;
+    const sidecarPath = sidecarPathFor(sourceAbs);
+
+    args.thread.comments = [makeComment(args.body, args.author)];
+    args.thread.canReply = true;
+    args.thread.contextValue = "markback.persisted";
+    args.thread.label = undefined;
+    args.thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed;
+
+    const state: ThreadState = {
+      thread: args.thread,
+      sidecarPath,
+      sourceUri: args.sourceUri,
+      parentRecordId: args.parentRecordId,
+      recordIds: [args.parentRecordId],
+      range: args.range,
+    };
+    const list = this.threadsBySource.get(sourceAbs) ?? [];
+    list.push(state);
+    this.threadsBySource.set(sourceAbs, list);
+    this.repaintAllForSource(sourceAbs);
+    return state;
+  }
+
+  disposeUntrackedEmptyThread(thread: vscode.CommentThread): boolean {
+    if (this.findDraftFor(thread)) return false;
+    if (this.findStateFor(thread)) return false;
+    try {
+      thread.dispose();
+    } catch {
+      // ignore
+    }
+    return true;
   }
 
   discardDraftForSource(sourceAbs: string): void {
