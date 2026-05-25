@@ -62,10 +62,28 @@ async function runPreviewComment(
   deps.logger.info(
     `[command] previewComment invoked sourceUri=${args.sourceUri} lines=${args.startLine}-${args.endLine}`,
   );
-  let uri: vscode.Uri;
+  let uri: vscode.Uri | null = null;
   try {
-    uri = vscode.Uri.parse(args.sourceUri);
+    const parsed = vscode.Uri.parse(args.sourceUri);
+    if (parsed.scheme === "file" && parsed.fsPath) {
+      uri = parsed;
+    }
   } catch {
+    // fall through to file fallback
+  }
+  if (!uri) {
+    // Some VS Code versions report the source as a raw path (especially
+    // on Windows where the backslashes throw off Uri.parse). Try
+    // Uri.file as a fallback for any path-shaped string.
+    if (/[/\\]/.test(args.sourceUri)) {
+      try {
+        uri = vscode.Uri.file(args.sourceUri);
+      } catch {
+        // give up
+      }
+    }
+  }
+  if (!uri) {
     deps.logger.error(`[command] previewComment: bad sourceUri ${args.sourceUri}`);
     vscode.window.showErrorMessage("MarkBack: invalid source URI from preview.");
     return;

@@ -1,11 +1,16 @@
-// MarkBack — markdown preview injection (v0.2.0 MVP).
+// MarkBack — markdown preview injection.
 // Runs inside the VS Code markdown preview's webview. Plain JS, no
-// module imports. Sole purpose: render a floating "💬 Comment" button
-// when the user selects text in the preview, and route the click into
-// the markback.previewComment command via a `command:` URI link.
+// module imports.
 //
-// One-way bridge only: preview -> extension. Existing comments are not
-// rendered in the preview yet (v0.2.1 task).
+// Responsibilities:
+//  - Render a floating "💬 Comment" button when the user selects
+//    text in the preview (v0.2.0).
+//  - Render 💬 badges next to lines that have existing comments,
+//    using the JSON payload embedded by markdownItPlugin (v0.2.1).
+//  - Detect untrusted-workspace state and signal the user when
+//    command URI clicks would silently fail (v0.2.1).
+//
+// One-way bridge to the extension via command: URI navigation.
 
 (function () {
   "use strict";
@@ -15,9 +20,21 @@
   window.__markback_preview_injected__ = true;
 
   var SOURCE_URI = resolveSourceUri();
+  var TRUSTED = detectTrusted();
+
   if (!SOURCE_URI) {
     console.log("[markback] could not resolve source URI; preview commenting disabled");
     return;
+  }
+
+  if (!TRUSTED) {
+    console.log("[markback] workspace appears untrusted; command URIs may be blocked");
+    showTrustBanner();
+  }
+
+  var PAYLOAD = readPayload();
+  if (PAYLOAD && PAYLOAD.records && PAYLOAD.records.length > 0) {
+    renderBadges(PAYLOAD.records);
   }
 
   var BUTTON_ID = "markback-preview-button";
@@ -73,14 +90,12 @@
   function isInsideButton(node) {
     while (node) {
       if (node.id === BUTTON_ID) return true;
+      if (node.classList && node.classList.contains("markback-badge")) return true;
       node = node.parentNode;
     }
     return false;
   }
 
-  // Walk up from `node` to find the nearest element with [data-line].
-  // VS Code's markdown extension injects data-line on rendered block
-  // elements. Returns the integer line number, or null.
   function lineFor(node) {
     while (node && node.nodeType !== 1) node = node.parentNode;
     while (node) {
@@ -120,8 +135,6 @@
       document.body.appendChild(button);
     }
     var rect = range.getBoundingClientRect();
-    // Position above the selection's top-right corner. Adjust if it
-    // would go off-screen (clamp to viewport).
     var top = window.scrollY + rect.top - 36;
     if (rect.top < 40) top = window.scrollY + rect.bottom + 8;
     var left = window.scrollX + rect.right - 100;
@@ -154,10 +167,147 @@
     return s.slice(0, n - 1) + "…";
   }
 
-  // The markdown extension exposes the source document as JSON-encoded
-  // state on a <meta id="vscode-markdown-preview-data"> tag. The exact
-  // attribute that contains the URI has shifted across versions; try
-  // a few defensively.
+  // ---------- v0.2.1: badges for existing records ----------
+
+  function readPayload() {
+    var el = document.getElementById("markback-preview-data");
+    if (!el) return null;
+    try {
+      return JSON.parse(el.textContent || "{}");
+    } catch (e) {
+      console.log("[markback] failed to parse preview-data payload:", e);
+      return null;
+    }
+  }
+
+  // Group records by their root parent (records with replyTo chain up
+  // to a parent that has a real anchor). Returns { byParent, recordsById }.
+  function indexRecords(records) {
+    var byId = {};
+    for (var i = 0; i < records.length; i++) byId[records[i].id] = records[i];
+    var byParent = {}; // parentId -> [parent, ...replies in order]
+    function rootOf(r) {
+      var cursor = r;
+      var visited = {};
+      while (cursor && cursor.replyTo && !visited[cursor.id]) {
+        visited[cursor.id] = true;
+        var next = byId[cursor.replyTo];
+        if (!next) return null;
+        cursor = next;
+      }
+      if (cursor && !cursor.replyTo && cursor.startLine >= 0) return cursor;
+      return null;
+    }
+    for (var j = 0; j < records.length; j++) {
+      var r = records[j];
+      var root = rootOf(r);
+      if (!root) continue;
+      if (!byParent[root.id]) byParent[root.id] = [];
+      // Preserve original document order; first entry is the parent
+      // (added when we first encounter it).
+      byParent[root.id].push(r);
+    }
+    // Ensure parent is always first in each group.
+    var groups = [];
+    for (var pid in byParent) {
+      if (!Object.prototype.hasOwnProperty.call(byParent, pid)) continue;
+      var list = byParent[pid];
+      list.sort(function (a, b) {
+        if (a.id === pid) return -1;
+        if (b.id === pid) return 1;
+        return 0;
+      });
+      groups.push({ parent: list[0], thread: list });
+    }
+    return groups;
+  }
+
+  function renderBadges(records) {
+    var groups = indexRecords(records);
+    for (var i = 0; i < groups.length; i++) {
+      renderBadgeForGroup(groups[i]);
+    }
+  }
+
+  // Find the rendered element whose [data-line] matches the parent's
+  // startLine. The markdown extension emits data-line on block
+  // elements; for line N in source, the matching element is the one
+  // whose data-line <= N (the immediately-preceding block boundary).
+  function findElementForLine(line) {
+    // Try exact match first.
+    var nodes = document.querySelectorAll("[data-line]");
+    var bestNode = null;
+    var bestLine = -1;
+    for (var i = 0; i < nodes.length; i++) {
+      var v = parseInt(nodes[i].getAttribute("data-line"), 10);
+      if (isNaN(v)) continue;
+      if (v === line) return nodes[i];
+      if (v < line && v > bestLine) {
+        bestNode = nodes[i];
+        bestLine = v;
+      }
+    }
+    return bestNode;
+  }
+
+  function renderBadgeForGroup(group) {
+    var parent = group.parent;
+    var el = findElementForLine(parent.startLine);
+    if (!el) {
+      console.log("[markback] no DOM element for record at line", parent.startLine);
+      return;
+    }
+    var badge = document.createElement("span");
+    badge.className = "markback-badge";
+    badge.textContent = "💬" + (group.thread.length > 1 ? group.thread.length : "");
+    badge.title = previewSummary(group.thread);
+    badge.setAttribute("data-markback-parent-id", parent.id);
+    // No click handler yet — v0.2.2 wires the bubble.
+    el.appendChild(badge);
+  }
+
+  function previewSummary(thread) {
+    var lines = [];
+    for (var i = 0; i < thread.length; i++) {
+      var r = thread[i];
+      var who = r.author || "unknown";
+      var body = (r.body || "").replace(/\s+/g, " ").trim();
+      if (body.length > 80) body = body.slice(0, 79) + "…";
+      lines.push(who + ": " + body);
+    }
+    return lines.join("\n");
+  }
+
+  // ---------- v0.2.1: trust detection + banner ----------
+
+  function detectTrusted() {
+    // VS Code adds vscode-trusted / vscode-untrusted class on body
+    // for untrusted workspaces in many versions. Also exposes
+    // window.isTrusted indirectly via the data attributes. Be lax:
+    // if any signal says untrusted, assume untrusted.
+    var body = document.body;
+    if (body && body.classList) {
+      if (body.classList.contains("vscode-untrusted")) return false;
+    }
+    var html = document.documentElement;
+    if (html && html.classList && html.classList.contains("vscode-untrusted")) {
+      return false;
+    }
+    // Default optimistic.
+    return true;
+  }
+
+  function showTrustBanner() {
+    var banner = document.createElement("div");
+    banner.className = "markback-trust-banner";
+    banner.textContent =
+      "MarkBack: preview commenting is disabled in Restricted Mode. " +
+      "Trust this workspace to enable.";
+    document.body.appendChild(banner);
+  }
+
+  // ---------- source URI resolution ----------
+
   function resolveSourceUri() {
     var meta = document.getElementById("vscode-markdown-preview-data");
     if (meta) {
@@ -181,11 +331,8 @@
     try {
       var obj = JSON.parse(raw);
       if (!obj || typeof obj !== "object") return null;
-      // Most likely shapes: { source: "file:..." } or
-      // { resource: "..." } or nested under another key.
       if (typeof obj.source === "string") return obj.source;
       if (typeof obj.resource === "string") return obj.resource;
-      // Recursively scan nested objects for a "source"/"resource" string.
       for (var k in obj) {
         if (typeof obj[k] === "object" && obj[k] !== null) {
           var sub = obj[k].source || obj[k].resource;

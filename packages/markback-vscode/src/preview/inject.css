@@ -1,7 +1,4 @@
-/* MarkBack — markdown preview injected styles.
- * VS Code preview webviews expose theme variables; use them so the
- * button matches the user's color scheme.
- */
+/* MarkBack — markdown preview injected styles. */
 
 .markback-preview-button {
   position: absolute !important;
@@ -31,4 +28,41 @@
 
 .markback-preview-button:active {
   transform: translateY(1px);
+}
+
+/* v0.2.1 — inline 💬 badges next to commented elements. */
+.markback-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  background-color: var(--vscode-badge-background, #4d4d4d);
+  color: var(--vscode-badge-foreground, white);
+  border-radius: 10px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  vertical-align: middle;
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+}
+
+.markback-badge:hover {
+  filter: brightness(1.15);
+}
+
+/* v0.2.1 — trust banner shown when command URIs may be blocked. */
+.markback-trust-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1100;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  color: var(--vscode-inputValidation-warningForeground, #1e1e1e);
+  background-color: var(--vscode-inputValidation-warningBackground, #fff4ce);
+  border-bottom: 1px solid var(--vscode-inputValidation-warningBorder, #b89500);
+  text-align: center;
 }
