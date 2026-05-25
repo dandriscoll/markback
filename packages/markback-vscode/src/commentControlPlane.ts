@@ -338,6 +338,15 @@ export class CommentControlPlane {
         await this.refreshDocument(doc);
       }
     }
+    // Also refresh any open markdown previews so embedded badges
+    // pick up new/changed/removed records without a manual refresh.
+    if (sourcePath.toLowerCase().endsWith(".md")) {
+      try {
+        await vscode.commands.executeCommand("markdown.preview.refresh");
+      } catch (err: unknown) {
+        this.logger.warn(`[plane] markdown.preview.refresh failed: ${(err as Error).message}`);
+      }
+    }
   }
 
   private onSidecarDeleted(uri: vscode.Uri): void {
