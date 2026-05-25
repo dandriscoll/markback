@@ -3,7 +3,7 @@ import * as vscode from "vscode";
 import { AuthorResolver } from "./author";
 import { CommentControlPlane } from "./commentControlPlane";
 import { OutputLogger } from "./output";
-import { sidecarPathFor } from "./sidecarPath";
+import { isSidecar, sidecarPathFor } from "./sidecarPath";
 import { SidecarRepository } from "./sidecarRepository";
 
 type Deps = {
@@ -33,7 +33,48 @@ export function registerCommands(
     vscode.commands.registerCommand("markback.showOutput", () =>
       deps.logger.reveal(),
     ),
+    vscode.commands.registerCommand(
+      "markback.openSidecar",
+      (thread?: vscode.CommentThread) => runOpenSidecar(thread, deps),
+    ),
   );
+}
+
+async function runOpenSidecar(
+  thread: vscode.CommentThread | undefined,
+  deps: Deps,
+): Promise<void> {
+  deps.logger.info("[command] openSidecar invoked");
+  const sourceUri = thread?.uri ?? vscode.window.activeTextEditor?.document.uri;
+  if (!sourceUri) {
+    vscode.window.showInformationMessage(
+      "MarkBack: no source file — open a file or invoke from a comment thread.",
+    );
+    return;
+  }
+  if (sourceUri.scheme !== "file") {
+    vscode.window.showInformationMessage(
+      "MarkBack: this file type does not support sidecar comments.",
+    );
+    return;
+  }
+  if (isSidecar(sourceUri.fsPath)) {
+    vscode.window.showInformationMessage(
+      "MarkBack: this is already the sidecar file.",
+    );
+    return;
+  }
+  const sidecarPath = sidecarPathFor(sourceUri.fsPath);
+  try {
+    const doc = await vscode.workspace.openTextDocument(sidecarPath);
+    await vscode.window.showTextDocument(doc, { preview: false });
+  } catch (err: unknown) {
+    const msg = (err as Error).message;
+    deps.logger.error(`openSidecar: ${msg}`);
+    vscode.window.showErrorMessage(
+      `MarkBack: cannot open ${sidecarPath} — ${msg}`,
+    );
+  }
 }
 
 async function runCommentSelection(deps: Deps): Promise<void> {
