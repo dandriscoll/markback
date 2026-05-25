@@ -2,7 +2,7 @@
   "name": "markback-vscode",
   "displayName": "MarkBack",
   "description": "Highlight text in any file and add MarkBack feedback that persists to a sidecar .mb file.",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "publisher": "dandriscoll",
   "license": "MIT",
   "repository": {
@@ -56,6 +56,12 @@
         "title": "Open Sidecar",
         "category": "MarkBack",
         "icon": "$(go-to-file)"
+      },
+      {
+        "command": "markback.previewComment",
+        "title": "Add Comment from Preview",
+        "category": "MarkBack",
+        "enablement": "false"
       }
     ],
     "keybindings": [
@@ -81,6 +87,10 @@
         },
         {
           "command": "markback.cancelDraft",
+          "when": "false"
+        },
+        {
+          "command": "markback.previewComment",
           "when": "false"
         }
       ],
@@ -118,7 +128,13 @@
           "description": "Identifier written as @by on every comment. If empty, falls back to `git config user.email`, then to no @by header."
         }
       }
-    }
+    },
+    "markdown.previewScripts": [
+      "./src/preview/inject.js"
+    ],
+    "markdown.previewStyles": [
+      "./src/preview/inject.css"
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

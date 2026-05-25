@@ -37,7 +37,81 @@ export function registerCommands(
       "markback.openSidecar",
       (thread?: vscode.CommentThread) => runOpenSidecar(thread, deps),
     ),
+    vscode.commands.registerCommand(
+      "markback.previewComment",
+      (args: PreviewCommentArgs) => runPreviewComment(args, deps),
+    ),
   );
+}
+
+type PreviewCommentArgs = {
+  sourceUri: string;
+  startLine: number;
+  endLine: number;
+  selectionText?: string;
+};
+
+async function runPreviewComment(
+  args: PreviewCommentArgs | undefined,
+  deps: Deps,
+): Promise<void> {
+  if (!args || typeof args.sourceUri !== "string") {
+    deps.logger.error("[command] previewComment: missing args");
+    return;
+  }
+  deps.logger.info(
+    `[command] previewComment invoked sourceUri=${args.sourceUri} lines=${args.startLine}-${args.endLine}`,
+  );
+  let uri: vscode.Uri;
+  try {
+    uri = vscode.Uri.parse(args.sourceUri);
+  } catch {
+    deps.logger.error(`[command] previewComment: bad sourceUri ${args.sourceUri}`);
+    vscode.window.showErrorMessage("MarkBack: invalid source URI from preview.");
+    return;
+  }
+  if (uri.scheme !== "file") {
+    vscode.window.showInformationMessage(
+      "MarkBack: this preview's source file does not support sidecar comments.",
+    );
+    return;
+  }
+  const placeHolder = args.selectionText
+    ? `On: "${args.selectionText}"`
+    : "Add a comment...";
+  const feedback = await vscode.window.showInputBox({
+    prompt: "Add a comment",
+    placeHolder,
+    ignoreFocusOut: true,
+  });
+  if (!feedback || feedback.trim().length === 0) return;
+  const author = await deps.author.resolve();
+
+  const startLine = Math.max(0, args.startLine | 0);
+  const endLine = Math.max(startLine, args.endLine | 0);
+  const range: { start: { line: number; character: number }; end: { line: number; character: number } } = {
+    start: { line: startLine, character: 0 },
+    end: { line: endLine + 1, character: 0 },
+  };
+
+  try {
+    await deps.repo.addRecord({
+      sidecarPath: sidecarPathFor(uri.fsPath),
+      sourceAbsPath: uri.fsPath,
+      range,
+      feedback: feedback.trim(),
+      by: author,
+    });
+    deps.logger.info(
+      `[command] previewComment: persisted at ${uri.fsPath}:${startLine + 1}-${endLine + 1}`,
+    );
+  } catch (err: unknown) {
+    const msg = (err as Error).message;
+    deps.logger.error(`previewComment: ${msg}`);
+    vscode.window.showErrorMessage(
+      `MarkBack: failed to save preview comment — ${msg}`,
+    );
+  }
 }
 
 async function runOpenSidecar(

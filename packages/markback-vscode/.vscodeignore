@@ -1,6 +1,7 @@
 .vscode/**
 .vscode-test/**
 src/**
+!src/preview/**
 test/**
 .gitignore
 .eslintrc.json
