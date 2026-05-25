@@ -2,7 +2,7 @@
   "name": "markback-vscode",
   "displayName": "MarkBack",
   "description": "Highlight text in any file and add MarkBack feedback that persists to a sidecar .mb file.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "dandriscoll",
   "license": "MIT",
   "repository": {
@@ -50,6 +50,12 @@
         "command": "markback.showOutput",
         "title": "Show Output Log",
         "category": "MarkBack"
+      },
+      {
+        "command": "markback.openSidecar",
+        "title": "Open Sidecar",
+        "category": "MarkBack",
+        "icon": "$(go-to-file)"
       }
     ],
     "keybindings": [
@@ -92,6 +98,13 @@
         {
           "command": "markback.saveComment",
           "group": "inline@1",
+          "when": "commentController == markback && !commentThreadIsEmpty"
+        }
+      ],
+      "comments/commentThread/title": [
+        {
+          "command": "markback.openSidecar",
+          "group": "inline",
           "when": "commentController == markback && !commentThreadIsEmpty"
         }
       ]

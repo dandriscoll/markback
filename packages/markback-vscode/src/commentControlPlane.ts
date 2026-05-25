@@ -37,8 +37,8 @@ export class CommentControlPlane {
       "MarkBack",
     );
     this.controller.options = {
-      prompt: "MarkBack feedback",
-      placeHolder: "e.g. awkward phrasing; needs=clarity",
+      prompt: "Add a comment",
+      placeHolder: "Add a comment...",
     };
 
     this.controller.commentingRangeProvider = {
