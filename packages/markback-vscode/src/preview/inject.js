@@ -331,6 +331,8 @@
       bubble.appendChild(renderBubbleComment(group.thread[i], i === 0));
     }
 
+    bubble.appendChild(renderReplyForm(group));
+
     var footer = document.createElement("div");
     footer.className = "markback-bubble-footer";
 
@@ -365,6 +367,70 @@
     body.className = "markback-bubble-body";
     body.textContent = r.body || "";
     wrap.appendChild(body);
+
+    return wrap;
+  }
+
+  function renderReplyForm(group) {
+    var wrap = document.createElement("div");
+    wrap.className = "markback-bubble-reply-form";
+
+    var input = document.createElement("textarea");
+    input.className = "markback-bubble-input";
+    input.rows = 2;
+    input.placeholder = "Reply...";
+    wrap.appendChild(input);
+
+    var row = document.createElement("div");
+    row.className = "markback-bubble-reply-row";
+
+    var hint = document.createElement("span");
+    hint.className = "markback-bubble-reply-hint";
+    hint.textContent = "Enter to send, Shift+Enter for newline";
+    row.appendChild(hint);
+
+    var submit = document.createElement("button");
+    submit.className = "markback-bubble-submit";
+    submit.type = "button";
+    submit.textContent = "Reply";
+    row.appendChild(submit);
+
+    wrap.appendChild(row);
+
+    function send() {
+      var text = (input.value || "").trim();
+      if (text.length === 0) return;
+      if (text.length > 2000) {
+        // Command URIs encode all args; keep the URL manageable.
+        text = text.slice(0, 2000);
+      }
+      var url = "command:markback.previewReply?" +
+        encodeURIComponent(JSON.stringify([{
+          sourceUri: SOURCE_URI,
+          parentId: group.parent.id,
+          text: text,
+        }]));
+      // Trigger the command via location navigation; webview intercepts.
+      try {
+        window.location.href = url;
+      } catch (e) {
+        console.log("[markback] previewReply navigation failed:", e);
+      }
+      dismissBubble();
+    }
+
+    submit.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      send();
+    });
+
+    input.addEventListener("keydown", function (e) {
+      if ((e.key === "Enter" || e.keyCode === 13) && !e.shiftKey) {
+        e.preventDefault();
+        send();
+      }
+    });
 
     return wrap;
   }

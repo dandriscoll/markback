@@ -45,7 +45,56 @@ export function registerCommands(
       "markback.previewOpenSidecar",
       (args: PreviewOpenSidecarArgs) => runPreviewOpenSidecar(args, deps),
     ),
+    vscode.commands.registerCommand(
+      "markback.previewReply",
+      (args: PreviewReplyArgs) => runPreviewReply(args, deps),
+    ),
   );
+}
+
+type PreviewReplyArgs = {
+  sourceUri: string;
+  parentId: string;
+  text: string;
+};
+
+async function runPreviewReply(
+  args: PreviewReplyArgs | undefined,
+  deps: Deps,
+): Promise<void> {
+  if (!args || typeof args.sourceUri !== "string" || typeof args.parentId !== "string") {
+    deps.logger.error("[command] previewReply: missing args");
+    return;
+  }
+  deps.logger.info(`[command] previewReply invoked parentId=${args.parentId}`);
+  const uri = parseSourceUri(args.sourceUri);
+  if (!uri || uri.scheme !== "file") {
+    deps.logger.error("[command] previewReply: bad sourceUri");
+    vscode.window.showErrorMessage("MarkBack: invalid source URI from preview.");
+    return;
+  }
+  const text = (args.text ?? "").trim();
+  if (text.length === 0) {
+    deps.logger.warn("[command] previewReply: empty text");
+    return;
+  }
+  const author = await deps.author.resolve();
+  try {
+    await deps.repo.addReply({
+      sidecarPath: sidecarPathFor(uri.fsPath),
+      parentId: args.parentId,
+      feedback: text,
+      by: author,
+    });
+    vscode.window.setStatusBarMessage(
+      "MarkBack: reply saved. Refresh preview to see it.",
+      5000,
+    );
+  } catch (err: unknown) {
+    const msg = (err as Error).message;
+    deps.logger.error(`previewReply: ${msg}`);
+    vscode.window.showErrorMessage(`MarkBack: failed to save reply — ${msg}`);
+  }
 }
 
 type PreviewOpenSidecarArgs = {
