@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import { AuthorResolver } from "./author";
 import { CommentControlPlane } from "./commentControlPlane";
 import { OutputLogger } from "./output";
+import { sidecarPathFor } from "./sidecarPath";
 import { SidecarRepository } from "./sidecarRepository";
 
 type Deps = {
@@ -135,7 +136,7 @@ async function runGutterAdd(
     return;
   }
   try {
-    const sidecarPath = `${sourceUri.fsPath}.mb`;
+    const sidecarPath = sidecarPathFor(sourceUri.fsPath);
     const { record } = await deps.repo.addRecord({
       sidecarPath,
       sourceAbsPath: sourceUri.fsPath,
