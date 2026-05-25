@@ -91,6 +91,7 @@
     while (node) {
       if (node.id === BUTTON_ID) return true;
       if (node.classList && node.classList.contains("markback-badge")) return true;
+      if (node.classList && node.classList.contains("markback-bubble")) return true;
       node = node.parentNode;
     }
     return false;
@@ -262,7 +263,11 @@
     badge.textContent = "💬" + (group.thread.length > 1 ? group.thread.length : "");
     badge.title = previewSummary(group.thread);
     badge.setAttribute("data-markback-parent-id", parent.id);
-    // No click handler yet — v0.2.2 wires the bubble.
+    badge.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleBubble(badge, group);
+    });
     el.appendChild(badge);
   }
 
@@ -276,6 +281,118 @@
       lines.push(who + ": " + body);
     }
     return lines.join("\n");
+  }
+
+  // ---------- v0.2.2: inline thread bubble ----------
+
+  var activeBubble = null;
+  var activeBadge = null;
+
+  document.addEventListener("mousedown", function (e) {
+    if (!activeBubble) return;
+    if (e.target === activeBubble || (activeBubble.contains && activeBubble.contains(e.target))) return;
+    if (e.target === activeBadge) return;
+    dismissBubble();
+  }, true);
+
+  document.addEventListener("keydown", function (e) {
+    if (activeBubble && (e.key === "Escape" || e.keyCode === 27)) {
+      dismissBubble();
+    }
+  });
+
+  function toggleBubble(badge, group) {
+    if (activeBubble && activeBadge === badge) {
+      dismissBubble();
+      return;
+    }
+    dismissBubble();
+    showBubble(badge, group);
+  }
+
+  function dismissBubble() {
+    if (activeBubble && activeBubble.parentNode) {
+      activeBubble.parentNode.removeChild(activeBubble);
+    }
+    activeBubble = null;
+    activeBadge = null;
+  }
+
+  function showBubble(badge, group) {
+    var bubble = document.createElement("div");
+    bubble.className = "markback-bubble";
+
+    var header = document.createElement("div");
+    header.className = "markback-bubble-header";
+    header.textContent = "MarkBack thread";
+    bubble.appendChild(header);
+
+    for (var i = 0; i < group.thread.length; i++) {
+      bubble.appendChild(renderBubbleComment(group.thread[i], i === 0));
+    }
+
+    var footer = document.createElement("div");
+    footer.className = "markback-bubble-footer";
+
+    var openLink = document.createElement("a");
+    openLink.className = "markback-bubble-action";
+    openLink.textContent = "Open in .mb";
+    openLink.setAttribute("href",
+      "command:markback.previewOpenSidecar?" +
+      encodeURIComponent(JSON.stringify([{ sourceUri: SOURCE_URI, recordId: group.parent.id }])));
+    footer.appendChild(openLink);
+
+    bubble.appendChild(footer);
+
+    // Position below the badge, clamped to viewport.
+    document.body.appendChild(bubble);
+    positionBubble(bubble, badge);
+
+    activeBubble = bubble;
+    activeBadge = badge;
+  }
+
+  function renderBubbleComment(r, isParent) {
+    var wrap = document.createElement("div");
+    wrap.className = isParent ? "markback-bubble-comment markback-bubble-parent" : "markback-bubble-comment markback-bubble-reply";
+
+    var meta = document.createElement("div");
+    meta.className = "markback-bubble-meta";
+    meta.textContent = (r.author || "unknown") + (isParent ? "" : " replied");
+    wrap.appendChild(meta);
+
+    var body = document.createElement("div");
+    body.className = "markback-bubble-body";
+    body.textContent = r.body || "";
+    wrap.appendChild(body);
+
+    return wrap;
+  }
+
+  function positionBubble(bubble, badge) {
+    var rect = badge.getBoundingClientRect();
+    bubble.style.position = "absolute";
+    // Anchor below the badge by default.
+    var top = window.scrollY + rect.bottom + 6;
+    var left = window.scrollX + rect.left;
+    // Render off-screen first to measure, then clamp.
+    bubble.style.visibility = "hidden";
+    bubble.style.top = "0px";
+    bubble.style.left = "0px";
+    var bRect = bubble.getBoundingClientRect();
+    var viewportRight = window.scrollX + window.innerWidth - 12;
+    if (left + bRect.width > viewportRight) {
+      left = Math.max(window.scrollX + 8, viewportRight - bRect.width);
+    }
+    var viewportBottom = window.scrollY + window.innerHeight - 12;
+    if (top + bRect.height > viewportBottom) {
+      // Try above the badge.
+      var altTop = window.scrollY + rect.top - bRect.height - 6;
+      if (altTop >= window.scrollY + 8) top = altTop;
+    }
+    bubble.style.top = top + "px";
+    bubble.style.left = left + "px";
+    bubble.style.visibility = "";
   }
 
   // ---------- v0.2.1: trust detection + banner ----------

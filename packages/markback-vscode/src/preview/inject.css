@@ -66,3 +66,76 @@
   border-bottom: 1px solid var(--vscode-inputValidation-warningBorder, #b89500);
   text-align: center;
 }
+
+/* v0.2.2 — inline thread bubble shown when a badge is clicked. */
+.markback-bubble {
+  position: absolute;
+  z-index: 1050;
+  min-width: 280px;
+  max-width: 480px;
+  padding: 8px 0 0 0;
+  font-size: 12px;
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  color: var(--vscode-editorHoverWidget-foreground, #1e1e1e);
+  background-color: var(--vscode-editorHoverWidget-background, white);
+  border: 1px solid var(--vscode-editorHoverWidget-border, #c8c8c8);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+}
+
+.markback-bubble-header {
+  padding: 0 12px 6px 12px;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--vscode-descriptionForeground, #6e6e6e);
+  border-bottom: 1px solid var(--vscode-editorHoverWidget-border, #e3e3e3);
+}
+
+.markback-bubble-comment {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--vscode-editorHoverWidget-border, #ececec);
+}
+
+.markback-bubble-comment:last-of-type {
+  border-bottom: none;
+}
+
+.markback-bubble-meta {
+  margin-bottom: 3px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #6e6e6e);
+}
+
+.markback-bubble-body {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.markback-bubble-parent .markback-bubble-meta {
+  font-weight: 600;
+  color: var(--vscode-editorHoverWidget-foreground, #1e1e1e);
+}
+
+.markback-bubble-footer {
+  padding: 6px 12px;
+  background-color: var(--vscode-editorHoverWidget-statusBarBackground, rgba(0,0,0,0.04));
+  border-top: 1px solid var(--vscode-editorHoverWidget-border, #ececec);
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+  text-align: right;
+}
+
+.markback-bubble-action {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  text-decoration: none !important;
+  color: var(--vscode-textLink-foreground, #0e639c) !important;
+  border-radius: 3px;
+}
+
+.markback-bubble-action:hover {
+  background-color: var(--vscode-list-hoverBackground, rgba(0,0,0,0.06));
+}

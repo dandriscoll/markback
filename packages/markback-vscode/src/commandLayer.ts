@@ -41,7 +41,69 @@ export function registerCommands(
       "markback.previewComment",
       (args: PreviewCommentArgs) => runPreviewComment(args, deps),
     ),
+    vscode.commands.registerCommand(
+      "markback.previewOpenSidecar",
+      (args: PreviewOpenSidecarArgs) => runPreviewOpenSidecar(args, deps),
+    ),
   );
+}
+
+type PreviewOpenSidecarArgs = {
+  sourceUri: string;
+  recordId?: string;
+};
+
+async function runPreviewOpenSidecar(
+  args: PreviewOpenSidecarArgs | undefined,
+  deps: Deps,
+): Promise<void> {
+  if (!args || typeof args.sourceUri !== "string") {
+    deps.logger.error("[command] previewOpenSidecar: missing args");
+    return;
+  }
+  deps.logger.info(`[command] previewOpenSidecar invoked recordId=${args.recordId ?? "(none)"}`);
+  const uri = parseSourceUri(args.sourceUri);
+  if (!uri) {
+    vscode.window.showErrorMessage("MarkBack: invalid source URI from preview.");
+    return;
+  }
+  if (uri.scheme !== "file") {
+    vscode.window.showInformationMessage(
+      "MarkBack: this preview's source file does not support sidecar comments.",
+    );
+    return;
+  }
+  const sidecarPath = sidecarPathFor(uri.fsPath);
+  try {
+    const doc = await vscode.workspace.openTextDocument(sidecarPath);
+    const editor = await vscode.window.showTextDocument(doc, { preview: false });
+    if (args.recordId) {
+      jumpToRecord(editor, doc, args.recordId, deps);
+    }
+  } catch (err: unknown) {
+    const msg = (err as Error).message;
+    deps.logger.error(`previewOpenSidecar: ${msg}`);
+    vscode.window.showErrorMessage(
+      `MarkBack: cannot open ${sidecarPath} — ${msg}`,
+    );
+  }
+}
+
+function parseSourceUri(raw: string): vscode.Uri | null {
+  try {
+    const parsed = vscode.Uri.parse(raw);
+    if (parsed.scheme === "file" && parsed.fsPath) return parsed;
+  } catch {
+    // fall through
+  }
+  if (/[/\\]/.test(raw)) {
+    try {
+      return vscode.Uri.file(raw);
+    } catch {
+      // give up
+    }
+  }
+  return null;
 }
 
 type PreviewCommentArgs = {
@@ -62,27 +124,7 @@ async function runPreviewComment(
   deps.logger.info(
     `[command] previewComment invoked sourceUri=${args.sourceUri} lines=${args.startLine}-${args.endLine}`,
   );
-  let uri: vscode.Uri | null = null;
-  try {
-    const parsed = vscode.Uri.parse(args.sourceUri);
-    if (parsed.scheme === "file" && parsed.fsPath) {
-      uri = parsed;
-    }
-  } catch {
-    // fall through to file fallback
-  }
-  if (!uri) {
-    // Some VS Code versions report the source as a raw path (especially
-    // on Windows where the backslashes throw off Uri.parse). Try
-    // Uri.file as a fallback for any path-shaped string.
-    if (/[/\\]/.test(args.sourceUri)) {
-      try {
-        uri = vscode.Uri.file(args.sourceUri);
-      } catch {
-        // give up
-      }
-    }
-  }
+  const uri = parseSourceUri(args.sourceUri);
   if (!uri) {
     deps.logger.error(`[command] previewComment: bad sourceUri ${args.sourceUri}`);
     vscode.window.showErrorMessage("MarkBack: invalid source URI from preview.");
