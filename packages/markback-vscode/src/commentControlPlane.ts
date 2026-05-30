@@ -187,6 +187,20 @@ export class CommentControlPlane {
       range: args.range,
     };
     this.draftBySource.set(sourceAbs, draft);
+
+    // Move keyboard focus to the new thread's reply input so the user's next
+    // keystroke types into the comment, not into the source document. VS Code's
+    // native gutter-"+" affordance does this for free; programmatic creation
+    // does not. The command id is internal-but-stable across current VS Code
+    // releases; on rejection we log and leave focus where it was.
+    void vscode.commands
+      .executeCommand("workbench.action.focusCommentReplyInput")
+      .then(undefined, (err: unknown) => {
+        this.logger.warn(
+          `[plane] focusCommentReplyInput failed: ${(err as Error).message}`,
+        );
+      });
+
     return draft;
   }
 
