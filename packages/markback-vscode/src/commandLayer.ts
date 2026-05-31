@@ -294,13 +294,30 @@ async function runCommentSelection(deps: Deps): Promise<void> {
     vscode.window.showInformationMessage("MarkBack: open a file and select text first.");
     return;
   }
-  const selection = editor.selection;
-  if (selection.isEmpty) {
-    vscode.window.showInformationMessage("MarkBack: select some text first.");
+  const range = resolveCommentRange(editor);
+  if (!range) {
+    vscode.window.showInformationMessage(
+      "MarkBack: place the cursor on a word or select text first.",
+    );
     return;
   }
-  const range = new vscode.Range(selection.start, selection.end);
   deps.plane.createDraftThread({ sourceUri: editor.document.uri, range });
+}
+
+function resolveCommentRange(editor: vscode.TextEditor): vscode.Range | null {
+  const selection = editor.selection;
+  if (!selection.isEmpty) {
+    return new vscode.Range(selection.start, selection.end);
+  }
+  // Implicit selection on right-click / empty-selection invocation:
+  // prefer the word at the cursor, then the current line if it has text.
+  // A blank line carries no anchor context, so refuse rather than create
+  // a draft that a future reader cannot tie back to anything.
+  const wordRange = editor.document.getWordRangeAtPosition(selection.active);
+  if (wordRange) return wordRange;
+  const line = editor.document.lineAt(selection.active.line);
+  if (line.text.trim().length > 0) return line.range;
+  return null;
 }
 
 async function runSaveComment(reply: vscode.CommentReply, deps: Deps): Promise<void> {
