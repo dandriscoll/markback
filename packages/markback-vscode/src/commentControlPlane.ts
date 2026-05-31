@@ -191,13 +191,16 @@ export class CommentControlPlane {
     // Move keyboard focus to the new thread's reply input so the user's next
     // keystroke types into the comment, not into the source document. VS Code's
     // native gutter-"+" affordance does this for free; programmatic creation
-    // does not. The command id is internal-but-stable across current VS Code
-    // releases; on rejection we log and leave focus where it was.
+    // does not. `workbench.action.focusCommentOnCurrentLine` is VS Code's
+    // built-in for focusing the comment widget at the cursor's current line —
+    // which is the line our newly-created thread anchors on, because the
+    // caller positioned the cursor before invoking us. On rejection we log
+    // and leave focus where it was.
     void vscode.commands
-      .executeCommand("workbench.action.focusCommentReplyInput")
+      .executeCommand("workbench.action.focusCommentOnCurrentLine")
       .then(undefined, (err: unknown) => {
         this.logger.warn(
-          `[plane] focusCommentReplyInput failed: ${(err as Error).message}`,
+          `[plane] focusCommentOnCurrentLine failed: ${(err as Error).message}`,
         );
       });
 

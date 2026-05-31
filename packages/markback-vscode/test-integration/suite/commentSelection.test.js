@@ -44,11 +44,11 @@ after(async () => {
 describe("markback.commentSelection — empirical coverage", function () {
   this.timeout(20000);
 
-  it("v0.2.5 focus-handoff target command is registered in VS Code", async () => {
+  it("focus-handoff target command is registered in VS Code", async () => {
     const cmds = await vscode.commands.getCommands(true);
     assert.ok(
-      cmds.includes("workbench.action.focusCommentReplyInput"),
-      "workbench.action.focusCommentReplyInput must be a registered VS Code command — if this fails, the v0.2.5 fix degrades to a warn-log and the user sees pre-fix behavior",
+      cmds.includes("workbench.action.focusCommentOnCurrentLine"),
+      "workbench.action.focusCommentOnCurrentLine must be a registered VS Code command — if this fails, createDraftThread's focus call degrades to a warn-log and the user sees pre-fix behavior",
     );
   });
 
@@ -86,9 +86,16 @@ describe("markback.commentSelection — empirical coverage", function () {
 
   it("v0.2.6: no selection on whitespace within a non-blank line anchors on the line", async () => {
     const api = await getTestApi();
-    const lineText = "alpha beta gamma";
+    // Two consecutive spaces give us a position with non-word chars on BOTH
+    // sides — VS Code's getWordRangeAtPosition returns undefined only when
+    // the position is not adjacent to any word character. A position at the
+    // end of a word (e.g. col 5 in "alpha beta") is still INSIDE the word
+    // range per VS Code's word-boundary semantics, so it would fall back to
+    // the word, not the line. The double-space below isolates a truly
+    // non-word position at col 6.
+    const lineText = "alpha  beta gamma";
     const { editor, uri } = await openTestFile(`${lineText}\n`);
-    editor.selection = new vscode.Selection(0, 5, 0, 5);
+    editor.selection = new vscode.Selection(0, 6, 0, 6);
 
     await vscode.commands.executeCommand("markback.commentSelection");
 

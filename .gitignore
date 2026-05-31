@@ -208,6 +208,7 @@ cython_debug/
 node_modules/
 packages/markback/dist/
 packages/markback/*.tsbuildinfo
+packages/markback-vscode/.vscode-test/
 
 # Marimo
 marimo/_static/
