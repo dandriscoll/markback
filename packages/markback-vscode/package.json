@@ -162,14 +162,21 @@
     "watch": "tsc -p tsconfig.json --watch",
     "clean": "rm -rf dist",
     "pretest": "npm run compile",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "pretest:integration": "npm run compile",
+    "test:integration": "node test-integration/runTest.js"
   },
   "dependencies": {
     "markbackjs": "file:../markbackjs"
   },
   "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.10",
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.100.0",
+    "@vscode/test-electron": "^2.5.2",
+    "glob": "^11.1.0",
+    "mocha": "^10.8.2",
     "typescript": "^5.4.0"
   }
 }

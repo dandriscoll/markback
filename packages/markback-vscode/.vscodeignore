@@ -3,6 +3,7 @@
 src/**
 !src/preview/**
 test/**
+test-integration/**
 .gitignore
 .eslintrc.json
 **/tsconfig.json

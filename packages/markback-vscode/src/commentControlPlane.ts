@@ -211,6 +211,17 @@ export class CommentControlPlane {
     return null;
   }
 
+  // Test-only introspection. Lets the integration harness assert that
+  // `markback.commentSelection` did or did not create a draft, and on what
+  // range, without exporting the entire plane's internals.
+  hasDraftForSource(sourceUri: vscode.Uri): boolean {
+    return this.draftBySource.has(sourceUri.fsPath);
+  }
+
+  getDraftRangeForSource(sourceUri: vscode.Uri): vscode.Range | null {
+    return this.draftBySource.get(sourceUri.fsPath)?.range ?? null;
+  }
+
   findStateFor(thread: vscode.CommentThread): ThreadState | null {
     for (const states of this.threadsBySource.values()) {
       const hit = states.find((s) => s.thread === thread);

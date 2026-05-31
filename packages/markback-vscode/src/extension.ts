@@ -9,7 +9,14 @@ import { buildMarkdownItPlugin } from "./markdownItPlugin";
 
 let mdPluginLogger: OutputLogger | null = null;
 
-export function activate(context: vscode.ExtensionContext): void {
+export type MarkbackTestApi = {
+  hasDraftForSource(sourceUri: vscode.Uri): boolean;
+  getDraftRangeForSource(sourceUri: vscode.Uri): vscode.Range | null;
+};
+
+export function activate(
+  context: vscode.ExtensionContext,
+): { _testApi: MarkbackTestApi } {
   const channel = vscode.window.createOutputChannel("MarkBack");
   context.subscriptions.push(channel);
   const logger = new OutputLogger(channel);
@@ -32,6 +39,13 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   logger.info("MarkBack extension v0.2 activated");
+
+  return {
+    _testApi: {
+      hasDraftForSource: (uri) => plane.hasDraftForSource(uri),
+      getDraftRangeForSource: (uri) => plane.getDraftRangeForSource(uri),
+    },
+  };
 }
 
 export function deactivate(): void {
