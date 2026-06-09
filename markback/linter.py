@@ -1,4 +1,4 @@
-"""MarkBack V2 linter implementation."""
+"""Markback V2 linter implementation."""
 
 import json
 from pathlib import Path
@@ -274,7 +274,7 @@ def lint_string(
     check_sources: bool = True,
     check_canonical: bool = True,
 ) -> ParseResult:
-    """Lint a MarkBack string."""
+    """Lint a Markback string."""
     result = parse_string(text, source_file=source_file)
 
     for idx, record in enumerate(result.records):
@@ -317,7 +317,7 @@ def lint_file(
     check_sources: bool = True,
     check_canonical: bool = True,
 ) -> ParseResult:
-    """Lint a MarkBack file."""
+    """Lint a Markback file."""
     path = Path(path)
     try:
         text = path.read_text(encoding="utf-8")
@@ -365,7 +365,7 @@ def lint_files(
     check_sources: bool = True,
     check_canonical: bool = True,
 ) -> list[ParseResult]:
-    """Lint multiple MarkBack files."""
+    """Lint multiple Markback files."""
     results: list[ParseResult] = []
 
     for path in paths:

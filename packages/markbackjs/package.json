@@ -1,7 +1,7 @@
 {
   "name": "markbackjs",
   "version": "0.2.1",
-  "description": "MarkBack — comments for anything, in plain text, in git. JS/TS bindings.",
+  "description": "Markback — comments for anything, in plain text, in git. JS/TS bindings.",
   "license": "MIT",
   "homepage": "https://markback.org",
   "repository": {

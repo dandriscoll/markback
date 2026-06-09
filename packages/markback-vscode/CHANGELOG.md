@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the MarkBack VS Code extension are documented here.
+All notable changes to the Markback VS Code extension are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## 0.2.8
@@ -47,4 +47,4 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## 0.1.0
 
 - Initial release: highlight text in any file and add feedback that persists to a
-  sidecar `<filename>.mb` file in the MarkBack V2 format.
+  sidecar `<filename>.mb` file in the Markback V2 format.

@@ -18,7 +18,7 @@ file as a publish gate.
    cd ../markback-vscode && npm install && npm run compile
    ```
 2. Open `packages/markback-vscode/` in VS Code, press **F5** → an Extension
-   Development Host window opens with MarkBack loaded.
+   Development Host window opens with Markback loaded.
 3. Use a **light theme** (Default Light Modern) for contrast in the listing, and
    a clean sample doc (a short README-style Markdown file). **Trust the
    workspace** (preview commenting is disabled in Restricted Mode).

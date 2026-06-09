@@ -1,4 +1,4 @@
-# MarkBack
+# Markback
 
 > **Comments for anything. In plain text. In git.**
 
@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 
-MarkBack is a tiny text format for leaving feedback on any file —
+Markback is a tiny text format for leaving feedback on any file —
 text, code, images, PDFs — that lints, diffs, and lives next to the
 work. CLI, Python, Node, a browser editor, and a VS Code extension.
 
@@ -26,7 +26,7 @@ pip install -e .
 
 ## Quick Start
 
-### Parse a MarkBack file
+### Parse a Markback file
 
 ```python
 from markback import parse_file, parse_string
@@ -46,7 +46,7 @@ Some content here.
 result = parse_string(text)
 ```
 
-### Write MarkBack files
+### Write Markback files
 
 ```python
 from markback import Record, FileRef, write, append

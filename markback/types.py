@@ -1,4 +1,4 @@
-"""Core types for MarkBack V2 format."""
+"""Core types for Markback V2 format."""
 
 import re
 from dataclasses import dataclass, field
@@ -184,7 +184,7 @@ SourceRef = FileRef
 
 @dataclass
 class Record:
-    """A MarkBack record containing content and feedback."""
+    """A Markback record containing content and feedback."""
     feedback: str
     id: Optional[str] = None
     by: Optional[str] = None
@@ -254,7 +254,7 @@ class Record:
 
 @dataclass
 class ParseResult:
-    """Result of parsing a MarkBack file or set of files."""
+    """Result of parsing a Markback file or set of files."""
     records: list[Record]
     diagnostics: list[Diagnostic]
     source_file: Optional[Path] = None

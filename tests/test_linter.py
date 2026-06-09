@@ -1,4 +1,4 @@
-"""Tests for MarkBack V2 linter."""
+"""Tests for Markback V2 linter."""
 
 import pytest
 from pathlib import Path

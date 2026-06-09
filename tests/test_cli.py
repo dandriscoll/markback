@@ -1,4 +1,4 @@
-"""Tests for MarkBack V2 CLI."""
+"""Tests for Markback V2 CLI."""
 
 import pytest
 import json

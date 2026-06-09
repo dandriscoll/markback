@@ -1,4 +1,4 @@
-"""MarkBack V2 parser implementation."""
+"""Markback V2 parser implementation."""
 
 import re
 from pathlib import Path
@@ -45,7 +45,7 @@ class LineType:
 
 
 def classify_line(line: str) -> str:
-    """Classify a line according to MarkBack grammar."""
+    """Classify a line according to Markback grammar."""
     stripped = line.rstrip()
 
     if not stripped:
@@ -119,7 +119,7 @@ def parse_string(
     text: str,
     source_file: Optional[Path] = None,
 ) -> ParseResult:
-    """Parse a MarkBack string into records.
+    """Parse a Markback string into records.
 
     Handles V1 and V2 formats, single-record, multi-record, and compact formats.
     """
@@ -538,7 +538,7 @@ def parse_string(
 
 
 def parse_file(path: Path) -> ParseResult:
-    """Parse a MarkBack file."""
+    """Parse a Markback file."""
     path = Path(path)
     try:
         text = path.read_text(encoding="utf-8")
@@ -619,7 +619,7 @@ def parse_directory(
     directory: Path,
     recursive: bool = False,
 ) -> ParseResult:
-    """Parse all MarkBack files in a directory."""
+    """Parse all Markback files in a directory."""
     directory = Path(directory)
     all_records: list[Record] = []
     all_diagnostics: list[Diagnostic] = []

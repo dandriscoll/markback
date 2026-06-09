@@ -1,4 +1,4 @@
-// MarkBack — markdown preview injection.
+// Markback — markdown preview injection.
 // Runs inside the VS Code markdown preview's webview. Plain JS, no
 // module imports.
 //
@@ -324,7 +324,7 @@
 
     var header = document.createElement("div");
     header.className = "markback-bubble-header";
-    header.textContent = "MarkBack thread";
+    header.textContent = "Markback thread";
     bubble.appendChild(header);
 
     for (var i = 0; i < group.thread.length; i++) {
@@ -484,7 +484,7 @@
     var banner = document.createElement("div");
     banner.className = "markback-trust-banner";
     banner.textContent =
-      "MarkBack: preview commenting is disabled in Restricted Mode. " +
+      "Markback: preview commenting is disabled in Restricted Mode. " +
       "Trust this workspace to enable.";
     document.body.appendChild(banner);
   }

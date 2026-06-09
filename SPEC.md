@@ -1,4 +1,4 @@
-# MarkBack V2 Specification
+# Markback V2 Specification
 
 **Version:** 0.2.0
 **Status:** Draft
@@ -6,7 +6,7 @@
 
 ## 1. Overview
 
-MarkBack is a compact, human-writable format for storing content paired with single-line feedback. It is designed for managing training data, prompt engineering workflows, annotation tasks, and code review where content items need associated feedback.
+Markback is a compact, human-writable format for storing content paired with single-line feedback. It is designed for managing training data, prompt engineering workflows, annotation tasks, and code review where content items need associated feedback.
 
 ### 1.1 Design Goals
 
@@ -35,7 +35,7 @@ MarkBack is a compact, human-writable format for storing content paired with sin
 
 ## 2. Record Model
 
-A MarkBack **record** is the fundamental unit. Every record has:
+A Markback **record** is the fundamental unit. Every record has:
 
 | Field | Required | Description |
 |-------|----------|-------------|
@@ -175,7 +175,7 @@ References an item that precedes the content. For example, if the content is an 
 ```
 
 **Rules:**
-- Relative paths are resolved relative to the MarkBack file location
+- Relative paths are resolved relative to the Markback file location
 - `@input` can be used with or without `@file`
 - `@input` does not affect content handling (inline content and `@file` rules still apply)
 - Parsers SHOULD verify referenced files exist (W009 warning if missing)
@@ -192,7 +192,7 @@ References external content. In V2, `@file` and inline content can coexist: `@fi
 ```
 
 **Rules:**
-- Relative paths are resolved relative to the MarkBack file location
+- Relative paths are resolved relative to the Markback file location
 - `@file` and inline content MAY coexist (`@file` is provenance, inline content is snapshot)
 - Parsers SHOULD verify referenced files exist (W003 warning if missing)
 - Supports line/character ranges (see 3.1.6)
@@ -341,7 +341,7 @@ feedback
 
 #### 3.3.2 Structured Feedback (Optional Convention)
 
-For machine-readable feedback, MarkBack supports an optional structured convention. Parsers MAY interpret feedback using these rules:
+For machine-readable feedback, Markback supports an optional structured convention. Parsers MAY interpret feedback using these rules:
 
 **Format:** `<<< [label;] [key=value; ...] [comment]`
 
@@ -498,7 +498,7 @@ File-level headers use the `%` prefix and appear at the top of a file, before an
 
 ### 4.1 `%markback` -- Version Declaration
 
-Declares the MarkBack format version.
+Declares the Markback format version.
 
 ```
 %markback 2
@@ -536,7 +536,7 @@ Declares a glob pattern identifying the complete set of files under review.
 **Rules:**
 - Value is a single glob pattern
 - Files matching the pattern that have no record are implicitly clean for all `%scope` items
-- Resolved relative to the MarkBack file location
+- Resolved relative to the Markback file location
 - Optional; meaningful only when combined with `%scope`
 
 ### 4.4 File-Level Header Placement
@@ -559,7 +559,7 @@ Unknown `%` headers generate a W002 warning.
 
 ## 5. Storage Modes
 
-MarkBack supports three storage modes. All produce the same logical record structure.
+Markback supports three storage modes. All produce the same logical record structure.
 
 ### 5.1 Inline Mode
 
@@ -1158,7 +1158,7 @@ Spring whispers goodbye.
 
 ### 11.2 File Extensions
 
-- `.mb` -- MarkBack files (all modes: inline, compact, sidecar)
+- `.mb` -- Markback files (all modes: inline, compact, sidecar)
 - `name.ext.mb` -- Sidecar annotation files
 
 ### 11.3 Encoding

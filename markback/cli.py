@@ -1,4 +1,4 @@
-"""MarkBack V2 command-line interface."""
+"""Markback V2 command-line interface."""
 
 import glob as glob_module
 import json
@@ -279,7 +279,7 @@ def _do_upgrade(targets: list[str], dry_run: bool):
 
 
 def _do_stats(targets: list[str], json_output: bool):
-    """Show statistics for MarkBack files."""
+    """Show statistics for Markback files."""
     all_records: list[Record] = []
     file_count = 0
 
@@ -443,7 +443,7 @@ def _add_multi(
 
 app = typer.Typer(
     name="mb",
-    help="MarkBack V2: annotate files with feedback.",
+    help="Markback V2: annotate files with feedback.",
     add_completion=False,
 )
 
@@ -466,7 +466,7 @@ def main(
     do_normalize: bool = typer.Option(False, "--normalize", help="Normalize a file to canonical format"),
     do_convert: bool = typer.Option(False, "--convert", help="Convert a file to a different format"),
     do_upgrade: bool = typer.Option(False, "--upgrade", help="Upgrade V1 files to V2 format"),
-    do_stats: bool = typer.Option(False, "--stats", help="Show statistics for MarkBack files"),
+    do_stats: bool = typer.Option(False, "--stats", help="Show statistics for Markback files"),
     # Utility options
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
     no_source_check: bool = typer.Option(False, "--no-source-check", help="Skip file existence checks"),

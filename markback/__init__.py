@@ -1,4 +1,4 @@
-"""MarkBack V2: A compact format for content + feedback."""
+"""Markback V2: A compact format for content + feedback."""
 
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 

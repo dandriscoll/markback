@@ -34,7 +34,7 @@ export class CommentControlPlane {
   constructor(private repo: SidecarRepository, private logger: OutputLogger) {
     this.controller = vscode.comments.createCommentController(
       COMMENT_CONTROLLER_ID,
-      "MarkBack",
+      "Markback",
     );
     this.controller.options = {
       prompt: "Add a comment",
@@ -178,7 +178,7 @@ export class CommentControlPlane {
     thread.canReply = true;
     thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
     thread.contextValue = "markback.draft";
-    thread.label = "MarkBack: New Comment";
+    thread.label = "Markback: New Comment";
 
     const draft: DraftThreadState = {
       thread,

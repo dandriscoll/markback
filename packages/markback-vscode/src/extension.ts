@@ -17,7 +17,7 @@ export type MarkbackTestApi = {
 export function activate(
   context: vscode.ExtensionContext,
 ): { _testApi: MarkbackTestApi } {
-  const channel = vscode.window.createOutputChannel("MarkBack");
+  const channel = vscode.window.createOutputChannel("Markback");
   context.subscriptions.push(channel);
   const logger = new OutputLogger(channel);
   mdPluginLogger = logger;
@@ -38,7 +38,7 @@ export function activate(
     }),
   );
 
-  logger.info("MarkBack extension v0.2 activated");
+  logger.info("Markback extension v0.2 activated");
 
   return {
     _testApi: {

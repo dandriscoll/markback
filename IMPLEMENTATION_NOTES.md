@@ -1,4 +1,4 @@
-# Implementation Notes — MarkBack V2
+# Implementation Notes — Markback V2
 
 ## V1 → V2 Changes
 
@@ -15,9 +15,9 @@
 - Sidecar convention simplified to `name.ext.mb` only
 
 ### Removed
-- LLM workflow layer (`llm.py`, `workflow.py`) — not core to MarkBack
+- LLM workflow layer (`llm.py`, `workflow.py`) — not core to Markback
 - `httpx` dependency
-- `config.py` / `python-dotenv` dependency / `--init` command — not core to MarkBack
+- `config.py` / `python-dotenv` dependency / `--init` command — not core to Markback
 - RFC 3986 URI validation on `@id`
 - E003 (malformed URI) no longer emitted
 - E005 (content with @source) no longer emitted — coexistence is valid

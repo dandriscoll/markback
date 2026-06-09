@@ -1,6 +1,6 @@
 # markbackjs
 
-JavaScript/TypeScript linter for the MarkBack format.
+JavaScript/TypeScript linter for the Markback format.
 
 ## Install
 

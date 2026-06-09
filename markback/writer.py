@@ -1,4 +1,4 @@
-"""MarkBack V2 writer implementation."""
+"""Markback V2 writer implementation."""
 
 from enum import Enum
 from pathlib import Path
@@ -254,7 +254,7 @@ def normalize(
     in_place: bool = False,
     output_path=None,
 ) -> str:
-    """Read a MarkBack file and write it in canonical V2 form."""
+    """Read a Markback file and write it in canonical V2 form."""
     from .parser import parse_file
 
     path = Path(path)

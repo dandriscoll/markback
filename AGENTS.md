@@ -1,6 +1,6 @@
-# Writing MarkBack V2 (.mb) Files
+# Writing Markback V2 (.mb) Files
 
-MarkBack pairs content with single-line feedback using `<<<` as the delimiter.
+Markback pairs content with single-line feedback using `<<<` as the delimiter.
 
 ## Minimal record
 

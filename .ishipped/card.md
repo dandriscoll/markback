@@ -1,5 +1,5 @@
 ---
-title: "MarkBack"
+title: "Markback"
 summary: "Human-writable format for pairing content with labels and feedback."
 shipped: 2026-01-04
 theme: forest
@@ -17,7 +17,7 @@ links:
 
 ## What is it?
 
-MarkBack is a compact file format for storing content alongside feedback and labels. It's built for training data management, prompt engineering, and annotation workflows where you need human-readable files that machines can parse reliably.
+Markback is a compact file format for storing content alongside feedback and labels. It's built for training data management, prompt engineering, and annotation workflows where you need human-readable files that machines can parse reliably.
 
 ## Key Features
 

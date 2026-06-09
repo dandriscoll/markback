@@ -70,7 +70,7 @@ async function runPreviewReply(
   const uri = parseSourceUri(args.sourceUri);
   if (!uri || uri.scheme !== "file") {
     deps.logger.error("[command] previewReply: bad sourceUri");
-    vscode.window.showErrorMessage("MarkBack: invalid source URI from preview.");
+    vscode.window.showErrorMessage("Markback: invalid source URI from preview.");
     return;
   }
   const text = (args.text ?? "").trim();
@@ -87,13 +87,13 @@ async function runPreviewReply(
       by: author,
     });
     vscode.window.setStatusBarMessage(
-      "MarkBack: reply saved. Refresh preview to see it.",
+      "Markback: reply saved. Refresh preview to see it.",
       5000,
     );
   } catch (err: unknown) {
     const msg = (err as Error).message;
     deps.logger.error(`previewReply: ${msg}`);
-    vscode.window.showErrorMessage(`MarkBack: failed to save reply — ${msg}`);
+    vscode.window.showErrorMessage(`Markback: failed to save reply — ${msg}`);
   }
 }
 
@@ -113,12 +113,12 @@ async function runPreviewOpenSidecar(
   deps.logger.info(`[command] previewOpenSidecar invoked recordId=${args.recordId ?? "(none)"}`);
   const uri = parseSourceUri(args.sourceUri);
   if (!uri) {
-    vscode.window.showErrorMessage("MarkBack: invalid source URI from preview.");
+    vscode.window.showErrorMessage("Markback: invalid source URI from preview.");
     return;
   }
   if (uri.scheme !== "file") {
     vscode.window.showInformationMessage(
-      "MarkBack: this preview's source file does not support sidecar comments.",
+      "Markback: this preview's source file does not support sidecar comments.",
     );
     return;
   }
@@ -133,7 +133,7 @@ async function runPreviewOpenSidecar(
     const msg = (err as Error).message;
     deps.logger.error(`previewOpenSidecar: ${msg}`);
     vscode.window.showErrorMessage(
-      `MarkBack: cannot open ${sidecarPath} — ${msg}`,
+      `Markback: cannot open ${sidecarPath} — ${msg}`,
     );
   }
 }
@@ -176,12 +176,12 @@ async function runPreviewComment(
   const uri = parseSourceUri(args.sourceUri);
   if (!uri) {
     deps.logger.error(`[command] previewComment: bad sourceUri ${args.sourceUri}`);
-    vscode.window.showErrorMessage("MarkBack: invalid source URI from preview.");
+    vscode.window.showErrorMessage("Markback: invalid source URI from preview.");
     return;
   }
   if (uri.scheme !== "file") {
     vscode.window.showInformationMessage(
-      "MarkBack: this preview's source file does not support sidecar comments.",
+      "Markback: this preview's source file does not support sidecar comments.",
     );
     return;
   }
@@ -218,7 +218,7 @@ async function runPreviewComment(
     const msg = (err as Error).message;
     deps.logger.error(`previewComment: ${msg}`);
     vscode.window.showErrorMessage(
-      `MarkBack: failed to save preview comment — ${msg}`,
+      `Markback: failed to save preview comment — ${msg}`,
     );
   }
 }
@@ -231,19 +231,19 @@ async function runOpenSidecar(
   const sourceUri = thread?.uri ?? vscode.window.activeTextEditor?.document.uri;
   if (!sourceUri) {
     vscode.window.showInformationMessage(
-      "MarkBack: no source file — open a file or invoke from a comment thread.",
+      "Markback: no source file — open a file or invoke from a comment thread.",
     );
     return;
   }
   if (sourceUri.scheme !== "file") {
     vscode.window.showInformationMessage(
-      "MarkBack: this file type does not support sidecar comments.",
+      "Markback: this file type does not support sidecar comments.",
     );
     return;
   }
   if (isSidecar(sourceUri.fsPath)) {
     vscode.window.showInformationMessage(
-      "MarkBack: this is already the sidecar file.",
+      "Markback: this is already the sidecar file.",
     );
     return;
   }
@@ -261,7 +261,7 @@ async function runOpenSidecar(
     const msg = (err as Error).message;
     deps.logger.error(`openSidecar: ${msg}`);
     vscode.window.showErrorMessage(
-      `MarkBack: cannot open ${sidecarPath} — ${msg}`,
+      `Markback: cannot open ${sidecarPath} — ${msg}`,
     );
   }
 }
@@ -291,13 +291,13 @@ async function runCommentSelection(deps: Deps): Promise<void> {
   deps.logger.info("[command] commentSelection invoked");
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
-    vscode.window.showInformationMessage("MarkBack: open a file and select text first.");
+    vscode.window.showInformationMessage("Markback: open a file and select text first.");
     return;
   }
   const range = resolveCommentRange(editor);
   if (!range) {
     vscode.window.showInformationMessage(
-      "MarkBack: place the cursor on a word or select text first.",
+      "Markback: place the cursor on a word or select text first.",
     );
     return;
   }
@@ -324,7 +324,7 @@ async function runSaveComment(reply: vscode.CommentReply, deps: Deps): Promise<v
   deps.logger.info("[command] saveComment invoked");
   const text = reply.text.trim();
   if (text.length === 0) {
-    vscode.window.showWarningMessage("MarkBack: empty feedback — nothing to save.");
+    vscode.window.showWarningMessage("Markback: empty feedback — nothing to save.");
     return;
   }
   const author = await deps.author.resolve();
@@ -350,7 +350,7 @@ async function runSaveComment(reply: vscode.CommentReply, deps: Deps): Promise<v
     } catch (err: unknown) {
       const msg = (err as Error).message;
       deps.logger.error(`saveComment(new): ${msg}`);
-      vscode.window.showErrorMessage(`MarkBack: failed to save comment — ${msg}`);
+      vscode.window.showErrorMessage(`Markback: failed to save comment — ${msg}`);
     }
     return;
   }
@@ -376,7 +376,7 @@ async function runSaveComment(reply: vscode.CommentReply, deps: Deps): Promise<v
     } catch (err: unknown) {
       const msg = (err as Error).message;
       deps.logger.error(`saveComment(reply): ${msg}`);
-      vscode.window.showErrorMessage(`MarkBack: failed to save reply — ${msg}`);
+      vscode.window.showErrorMessage(`Markback: failed to save reply — ${msg}`);
     }
     return;
   }
@@ -394,13 +394,13 @@ async function runGutterAdd(
   const thread = reply.thread;
   if (!thread.range) {
     deps.logger.error("[command] gutter add: thread has no range");
-    vscode.window.showErrorMessage("MarkBack: cannot determine line for this comment.");
+    vscode.window.showErrorMessage("Markback: cannot determine line for this comment.");
     return;
   }
   const sourceUri = thread.uri;
   if (sourceUri.scheme !== "file") {
     deps.logger.error(`[command] gutter add: unsupported uri scheme ${sourceUri.scheme}`);
-    vscode.window.showErrorMessage("MarkBack: this file type does not support sidecar comments.");
+    vscode.window.showErrorMessage("Markback: this file type does not support sidecar comments.");
     return;
   }
   try {
@@ -426,7 +426,7 @@ async function runGutterAdd(
   } catch (err: unknown) {
     const msg = (err as Error).message;
     deps.logger.error(`saveComment(gutter): ${msg}`);
-    vscode.window.showErrorMessage(`MarkBack: failed to save comment — ${msg}`);
+    vscode.window.showErrorMessage(`Markback: failed to save comment — ${msg}`);
   }
 }
 
