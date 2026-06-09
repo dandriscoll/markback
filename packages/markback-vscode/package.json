@@ -1,0 +1,196 @@
+{
+  "name": "markback-vscode",
+  "displayName": "MarkBack",
+  "description": "Review Markdown like a doc — comment on the preview (and any file) with feedback saved to a plain-text .mb sidecar that diffs in git.",
+  "version": "0.2.8",
+  "publisher": "dandriscoll",
+  "license": "MIT",
+  "icon": "icon.png",
+  "galleryBanner": {
+    "color": "#222b3a",
+    "theme": "dark"
+  },
+  "homepage": "https://markback.org",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dandriscoll/markback.git",
+    "directory": "packages/markback-vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/dandriscoll/markback/issues"
+  },
+  "engines": {
+    "vscode": "^1.100.0",
+    "node": ">=18"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "markdown",
+    "comments",
+    "annotation",
+    "review",
+    "feedback",
+    "markback",
+    "sidecar",
+    "docs",
+    "notes"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "markback.commentSelection",
+        "title": "Comment on Selection",
+        "category": "MarkBack"
+      },
+      {
+        "command": "markback.saveComment",
+        "title": "Save Comment",
+        "category": "MarkBack",
+        "enablement": "!commentIsEmpty"
+      },
+      {
+        "command": "markback.cancelDraft",
+        "title": "Cancel",
+        "category": "MarkBack"
+      },
+      {
+        "command": "markback.showOutput",
+        "title": "Show Output Log",
+        "category": "MarkBack"
+      },
+      {
+        "command": "markback.openSidecar",
+        "title": "Open Sidecar",
+        "category": "MarkBack",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "markback.previewComment",
+        "title": "Add Comment from Preview",
+        "category": "MarkBack",
+        "enablement": "false"
+      },
+      {
+        "command": "markback.previewOpenSidecar",
+        "title": "Open Sidecar from Preview",
+        "category": "MarkBack",
+        "enablement": "false"
+      },
+      {
+        "command": "markback.previewReply",
+        "title": "Reply from Preview",
+        "category": "MarkBack",
+        "enablement": "false"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "markback.commentSelection",
+        "key": "ctrl+shift+m",
+        "mac": "cmd+shift+m",
+        "when": "editorTextFocus"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "markback.commentSelection",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "markback.saveComment",
+          "when": "false"
+        },
+        {
+          "command": "markback.cancelDraft",
+          "when": "false"
+        },
+        {
+          "command": "markback.previewComment",
+          "when": "false"
+        },
+        {
+          "command": "markback.previewOpenSidecar",
+          "when": "false"
+        },
+        {
+          "command": "markback.previewReply",
+          "when": "false"
+        }
+      ],
+      "comments/commentThread/context": [
+        {
+          "command": "markback.saveComment",
+          "group": "inline@1",
+          "when": "commentController == markback && commentThreadIsEmpty"
+        },
+        {
+          "command": "markback.cancelDraft",
+          "group": "inline@2",
+          "when": "commentController == markback && commentThreadIsEmpty"
+        },
+        {
+          "command": "markback.saveComment",
+          "group": "inline@1",
+          "when": "commentController == markback && !commentThreadIsEmpty"
+        }
+      ],
+      "comments/commentThread/title": [
+        {
+          "command": "markback.openSidecar",
+          "group": "inline",
+          "when": "commentController == markback && !commentThreadIsEmpty"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "MarkBack",
+      "properties": {
+        "markback.author": {
+          "type": "string",
+          "default": "",
+          "description": "Identifier written as @by on every comment. If empty, falls back to `git config user.email`, then to no @by header."
+        }
+      }
+    },
+    "markdown.previewScripts": [
+      "./src/preview/inject.js"
+    ],
+    "markdown.previewStyles": [
+      "./src/preview/inject.css"
+    ],
+    "markdown.markdownItPlugins": true
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run clean && npm run bundle",
+    "bundle": "node esbuild.js",
+    "compile": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch",
+    "clean": "rm -rf dist",
+    "pretest": "npm run compile",
+    "test": "node --test test/*.test.js",
+    "pretest:integration": "npm run compile",
+    "test:integration": "node test-integration/runTest.js"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.100.0",
+    "@vscode/test-electron": "^2.5.2",
+    "esbuild": "^0.28.0",
+    "glob": "^11.1.0",
+    "https-proxy-agent": "^7.0.6",
+    "markbackjs": "file:../markbackjs",
+    "mocha": "^10.8.2",
+    "typescript": "^5.4.0"
+  }
+}

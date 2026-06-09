@@ -1,0 +1,19 @@
+# The published .vsix ships only the esbuild bundle (dist/extension.js, which
+# inlines markbackjs), the preview assets, the icon, and docs. Everything else
+# — node_modules, TS sources, per-module tsc output, tests — is excluded.
+node_modules/**
+dist/**
+!dist/extension.js
+src/**
+!src/preview/**
+.vscode/**
+.vscode-test/**
+test/**
+test-integration/**
+esbuild.js
+media/SHOTLIST.md
+.gitignore
+.eslintrc.json
+**/tsconfig.json
+**/*.map
+**/*.ts
