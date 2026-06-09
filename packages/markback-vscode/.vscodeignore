@@ -4,6 +4,7 @@ src/**
 !src/preview/**
 test/**
 test-integration/**
+media/SHOTLIST.md
 .gitignore
 .eslintrc.json
 **/tsconfig.json
@@ -11,3 +12,4 @@ test-integration/**
 **/*.ts
 node_modules/markbackjs/src/**
 node_modules/markbackjs/test/**
+node_modules/markbackjs/node_modules/**
