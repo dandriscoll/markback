@@ -12,7 +12,7 @@ file and diffs cleanly in your pull requests.
 
 </div>
 
-![Commenting on a Markdown preview, with the comment saved to a .mb sidecar](media/preview-bubbles.gif)
+<!-- TODO(media): hero demo — see media/SHOTLIST.md (preview-bubbles.gif) -->
 
 ---
 
@@ -51,7 +51,7 @@ MarkBack keeps the feedback **next to the work, in plain text, in git**:
 Prefer the editor? Select text in any file → right-click → **Comment on Selection**
 (or `Cmd/Ctrl+Shift+M`).
 
-![Selection commenting in the editor](media/comment-selection.png)
+<!-- TODO(media): editor selection commenting — see media/SHOTLIST.md (comment-selection.png) -->
 
 ## What a `.mb` file looks like
 
@@ -69,7 +69,7 @@ That's the whole format: `<<<` introduces a comment. Records
 [lint](https://markback.org/cli) with `mb --lint` and round-trip with the
 [browser editor](https://markback.org/try-it).
 
-![A .mb sidecar diffing in a pull request](media/sidecar-diff.png)
+<!-- TODO(media): .mb diffing in a PR — see media/SHOTLIST.md (sidecar-diff.png) -->
 
 ## Settings
 
