@@ -209,6 +209,8 @@ node_modules/
 packages/markback/dist/
 packages/markback/*.tsbuildinfo
 packages/markback-vscode/.vscode-test/
+packages/markback-vscode/dist/
+packages/markback-vscode/*.vsix
 
 # Marimo
 marimo/_static/
