@@ -98,6 +98,9 @@ function readFenceBody(lines: string[], startIdx: number): [string, number, bool
 }
 
 export function parseString(text: string, sourceFile?: string | null): ParseResult {
+  // Normalize line endings first so CRLF and CR inputs parse identically to LF
+  // (no stray carriage returns leak into content or trip whitespace checks).
+  text = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   let lines = text.split("\n");
   if (lines.length > 0 && lines[lines.length - 1] === "") {
     lines = lines.slice(0, -1);

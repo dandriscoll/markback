@@ -253,7 +253,7 @@ def lint_canonical_format(
     diagnostics: list[Diagnostic] = []
 
     canonical = write_string(records, version_header=False)
-    original_normalized = original_text.replace('\r\n', '\n')
+    original_normalized = original_text.replace('\r\n', '\n').replace('\r', '\n')
 
     if original_normalized != canonical:
         diagnostics.append(Diagnostic(

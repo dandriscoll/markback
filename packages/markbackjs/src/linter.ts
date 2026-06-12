@@ -264,7 +264,7 @@ function lintCanonicalFormat(records: MarkbackRecord[], originalText: string, fi
 
   const canonical =
     records.length === 1 ? `${writeRecordCanonical(records[0])}\n` : writeRecordsMulti(records);
-  const originalNormalized = originalText.replace(/\r\n/g, "\n");
+  const originalNormalized = originalText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
   if (originalNormalized !== canonical) {
     diagnostics.push(

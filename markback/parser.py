@@ -122,7 +122,10 @@ def parse_string(
     """Parse a Markback string into records.
 
     Handles V1 and V2 formats, single-record, multi-record, and compact formats.
+    Line endings are normalized first, so CRLF and CR inputs parse identically
+    to LF (no stray carriage returns leak into content or trip whitespace checks).
     """
+    text = text.replace('\r\n', '\n').replace('\r', '\n')
     lines = text.split('\n')
     if lines and lines[-1] == '':
         lines = lines[:-1]

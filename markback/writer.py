@@ -1,10 +1,40 @@
 """Markback V2 writer implementation."""
 
+import os
 from enum import Enum
 from pathlib import Path
 from typing import Optional
 
 from .types import Record, FileRef
+
+
+def _resolve_eol(path: Path) -> str:
+    """Line ending to write ``path`` with: preserve an existing file's
+    convention, otherwise the OS-native ending (CRLF on Windows, LF elsewhere).
+
+    Reads raw bytes — ``read_text`` would translate CRLF to LF and hide the
+    file's real convention.
+    """
+    try:
+        existing = path.read_bytes()
+    except (FileNotFoundError, NotADirectoryError, IsADirectoryError, OSError):
+        existing = b""
+    if existing:
+        return "\r\n" if b"\r\n" in existing else "\n"
+    return os.linesep
+
+
+def _write_text_eol(path: Path, content: str) -> None:
+    """Write ``content`` to ``path`` with OS-correct line endings.
+
+    Records are built internally with LF; translate to the resolved EOL and
+    write with ``newline=""`` so Python performs no further translation.
+    """
+    eol = _resolve_eol(path)
+    if eol != "\n":
+        content = content.replace("\r\n", "\n").replace("\n", eol)
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(content)
 
 
 def _feedback_is_multiline(feedback: str) -> bool:
@@ -159,7 +189,7 @@ def write(
         covers=covers,
         version_header=version_header,
     )
-    path.write_text(content, encoding="utf-8")
+    _write_text_eol(path, content)
 
 
 def write_string(
@@ -270,9 +300,9 @@ def normalize(
     )
 
     if output_path:
-        Path(output_path).write_text(content, encoding="utf-8")
+        _write_text_eol(Path(output_path), content)
     elif in_place:
-        path.write_text(content, encoding="utf-8")
+        _write_text_eol(path, content)
 
     return content
 
@@ -331,7 +361,7 @@ def write_file(
     else:
         raise ValueError(f"Unknown output mode: {mode}")
 
-    path.write_text(content, encoding="utf-8")
+    _write_text_eol(path, content)
 
 
 def write_paired_files(
@@ -342,10 +372,10 @@ def write_paired_files(
 ) -> None:
     """V1 compat: write paired label + content files."""
     label_content = write_label_file(record)
-    Path(label_path).write_text(label_content, encoding="utf-8")
+    _write_text_eol(Path(label_path), label_content)
 
     if write_content and content_path and record.content:
-        Path(content_path).write_text(record.content, encoding="utf-8")
+        _write_text_eol(Path(content_path), record.content)
 
 
 def normalize_file(

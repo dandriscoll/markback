@@ -13,6 +13,7 @@ export {
 
 export { parseString } from "./parser";
 export { writeRecordCanonical, writeRecordsMulti, writeString } from "./writer";
+export { detectEol, applyEol, Eol } from "./eol";
 
 export {
   lintString,
