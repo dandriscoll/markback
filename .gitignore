@@ -212,6 +212,15 @@ packages/markback-vscode/.vscode-test/
 packages/markback-vscode/dist/
 packages/markback-vscode/*.vsix
 
+# Track the internal markbackjs lib's build output (overrides the blanket
+# `dist/` rule above). The VS Code extension consumes markbackjs as a file:
+# dependency via its dist, so committing it keeps a fresh checkout's type
+# resolution and bundle correct without a separate per-consumer build step.
+!packages/markbackjs/dist/
+!packages/markbackjs/dist/**
+packages/markbackjs/dist/*.map
+packages/markbackjs/dist/**/*.map
+
 # Marimo
 marimo/_static/
 marimo/_lsp/

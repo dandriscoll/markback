@@ -170,11 +170,12 @@
     "markdown.markdownItPlugins": true
   },
   "scripts": {
-    "vscode:prepublish": "npm run clean && npm run bundle",
+    "vscode:prepublish": "npm run build:dep && npm run clean && npm run bundle",
+    "build:dep": "npm --prefix ../markbackjs run build",
     "bundle": "node esbuild.js",
     "compile": "tsc -p tsconfig.json",
     "watch": "tsc -p tsconfig.json --watch",
-    "clean": "rm -rf dist",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "pretest": "npm run compile",
     "test": "node --test test/*.test.js",
     "pretest:integration": "npm run compile",
