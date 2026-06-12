@@ -215,6 +215,58 @@ export class SidecarRepository {
     });
   }
 
+  async updateRecord(args: {
+    sidecarPath: string;
+    recordId: string;
+    feedback: string;
+  }): Promise<void> {
+    return this.withMutex(args.sidecarPath, async () => {
+      const cached = await this.ensureLoaded(args.sidecarPath);
+      if (cached.hasParseErrors) {
+        throw new Error(
+          `Sidecar ${args.sidecarPath} has parse errors; fix the file before editing comments.`,
+        );
+      }
+      const record = cached.records.find((r) => r.id === args.recordId);
+      if (!record) {
+        throw new Error(`No record ${args.recordId} in ${args.sidecarPath}`);
+      }
+      record.feedback = args.feedback;
+      await this.writeNow(args.sidecarPath, cached);
+    });
+  }
+
+  async deleteRecord(args: {
+    sidecarPath: string;
+    recordId: string;
+  }): Promise<{ removedIds: string[] }> {
+    return this.withMutex(args.sidecarPath, async () => {
+      const cached = await this.ensureLoaded(args.sidecarPath);
+      if (cached.hasParseErrors) {
+        throw new Error(
+          `Sidecar ${args.sidecarPath} has parse errors; fix the file before deleting comments.`,
+        );
+      }
+      // Cascade: removing a parent also removes any replies chaining to it,
+      // so no record is left dangling on a missing @reply-to.
+      const removed = new Set<string>([args.recordId]);
+      let grew = true;
+      while (grew) {
+        grew = false;
+        for (const r of cached.records) {
+          if (r.id && r.replyTo && removed.has(r.replyTo) && !removed.has(r.id)) {
+            removed.add(r.id);
+            grew = true;
+          }
+        }
+      }
+      const nextRecords = cached.records.filter((r) => !(r.id && removed.has(r.id)));
+      await this.writeNow(args.sidecarPath, { ...cached, records: nextRecords });
+      cached.records = nextRecords;
+      return { removedIds: [...removed] };
+    });
+  }
+
   private async ensureLoaded(sidecarPath: string): Promise<CachedSidecar> {
     if (!this.cache.has(sidecarPath)) {
       await this.load(sidecarPath);

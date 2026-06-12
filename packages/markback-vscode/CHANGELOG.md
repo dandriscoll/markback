@@ -3,8 +3,11 @@
 All notable changes to the Markback VS Code extension are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
-## 0.2.9
+## 0.3.0
 
+- **Edit and delete existing comments** from the thread UI — a pencil and trash
+  icon on each comment. Editing rewrites the `.mb` record in place; deleting a
+  parent also removes its replies. No more hand-editing the sidecar.
 - Reliably focus the comment box when a draft thread opens — the cursor is
   aligned to the thread's anchor line and the focus is deferred past the
   widget's render (with one retry), fixing the long-standing "focus didn't

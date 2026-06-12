@@ -2,7 +2,7 @@
   "name": "markback-vscode",
   "displayName": "Markback",
   "description": "Review Markdown like a doc — comment on the preview (and any file) with feedback saved to a plain-text .mb sidecar that diffs in git.",
-  "version": "0.2.9",
+  "version": "0.3.0",
   "publisher": "dandriscoll",
   "license": "MIT",
   "icon": "icon.png",
@@ -87,6 +87,28 @@
         "title": "Reply from Preview",
         "category": "Markback",
         "enablement": "false"
+      },
+      {
+        "command": "markback.editComment",
+        "title": "Edit Comment",
+        "category": "Markback",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "markback.deleteComment",
+        "title": "Delete Comment",
+        "category": "Markback",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "markback.saveEditComment",
+        "title": "Save",
+        "category": "Markback"
+      },
+      {
+        "command": "markback.cancelEditComment",
+        "title": "Cancel",
+        "category": "Markback"
       }
     ],
     "keybindings": [
@@ -124,6 +146,46 @@
         {
           "command": "markback.previewReply",
           "when": "false"
+        },
+        {
+          "command": "markback.editComment",
+          "when": "false"
+        },
+        {
+          "command": "markback.deleteComment",
+          "when": "false"
+        },
+        {
+          "command": "markback.saveEditComment",
+          "when": "false"
+        },
+        {
+          "command": "markback.cancelEditComment",
+          "when": "false"
+        }
+      ],
+      "comments/comment/title": [
+        {
+          "command": "markback.editComment",
+          "group": "inline@1",
+          "when": "commentController == markback"
+        },
+        {
+          "command": "markback.deleteComment",
+          "group": "inline@2",
+          "when": "commentController == markback"
+        }
+      ],
+      "comments/comment/context": [
+        {
+          "command": "markback.saveEditComment",
+          "group": "inline@1",
+          "when": "commentController == markback"
+        },
+        {
+          "command": "markback.cancelEditComment",
+          "group": "inline@2",
+          "when": "commentController == markback"
         }
       ],
       "comments/commentThread/context": [

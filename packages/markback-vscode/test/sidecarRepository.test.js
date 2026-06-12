@@ -193,3 +193,75 @@ test("addRecord: existing CRLF sidecar keeps CRLF on append (ignores default)", 
     assert.equal(result.records.length, 2);
   });
 });
+
+test("updateRecord: rewrites a record's feedback in place", async () => {
+  await withTempDir(async (dir) => {
+    const sourcePath = path.join(dir, "e.txt");
+    const sidecarPath = path.join(dir, "e.txt.mb");
+    await fs.writeFile(sourcePath, "hello world\n", "utf-8");
+    const repo = new SidecarRepository();
+    const { record } = await repo.addRecord({
+      sidecarPath, sourceAbsPath: sourcePath,
+      range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } },
+      feedback: "old", by: null,
+    });
+    await repo.updateRecord({ sidecarPath, recordId: record.id, feedback: "new feedback" });
+    const result = parseString(await fs.readFile(sidecarPath, "utf-8"), sidecarPath);
+    assert.equal(result.records.length, 1);
+    assert.equal(result.records[0].feedback, "new feedback");
+  });
+});
+
+test("updateRecord: throws for unknown record id", async () => {
+  await withTempDir(async (dir) => {
+    const sidecarPath = path.join(dir, "e.txt.mb");
+    await fs.writeFile(path.join(dir, "e.txt"), "x\n", "utf-8");
+    const repo = new SidecarRepository();
+    await repo.addRecord({
+      sidecarPath, sourceAbsPath: path.join(dir, "e.txt"),
+      range: { start: { line: 0, character: 0 }, end: { line: 0, character: 1 } },
+      feedback: "a", by: null,
+    });
+    await assert.rejects(repo.updateRecord({ sidecarPath, recordId: "nope", feedback: "x" }), /No record/);
+  });
+});
+
+test("deleteRecord: removes the record", async () => {
+  await withTempDir(async (dir) => {
+    const sourcePath = path.join(dir, "e.txt");
+    const sidecarPath = path.join(dir, "e.txt.mb");
+    await fs.writeFile(sourcePath, "hello world\n", "utf-8");
+    const repo = new SidecarRepository();
+    const { record } = await repo.addRecord({
+      sidecarPath, sourceAbsPath: sourcePath,
+      range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } },
+      feedback: "bye", by: null,
+    });
+    const { removedIds } = await repo.deleteRecord({ sidecarPath, recordId: record.id });
+    assert.deepEqual(removedIds, [record.id]);
+    const result = parseString(await fs.readFile(sidecarPath, "utf-8"), sidecarPath);
+    assert.equal(result.records.length, 0);
+  });
+});
+
+test("deleteRecord: deleting a parent cascades to its replies", async () => {
+  await withTempDir(async (dir) => {
+    const sourcePath = path.join(dir, "e.txt");
+    const sidecarPath = path.join(dir, "e.txt.mb");
+    await fs.writeFile(sourcePath, "hello world\n", "utf-8");
+    const repo = new SidecarRepository();
+    const { record: parent } = await repo.addRecord({
+      sidecarPath, sourceAbsPath: sourcePath,
+      range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } },
+      feedback: "parent", by: null,
+    });
+    const { record: reply } = await repo.addReply({
+      sidecarPath, parentId: parent.id, feedback: "reply", by: null,
+    });
+    const { removedIds } = await repo.deleteRecord({ sidecarPath, recordId: parent.id });
+    assert.equal(removedIds.length, 2);
+    assert.ok(removedIds.includes(parent.id) && removedIds.includes(reply.id));
+    const result = parseString(await fs.readFile(sidecarPath, "utf-8"), sidecarPath);
+    assert.equal(result.records.length, 0);
+  });
+});

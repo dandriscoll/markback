@@ -49,6 +49,28 @@ export function registerCommands(
       "markback.previewReply",
       (args: PreviewReplyArgs) => runPreviewReply(args, deps),
     ),
+    vscode.commands.registerCommand(
+      "markback.editComment",
+      (comment: vscode.Comment) => deps.plane.beginEditComment(comment),
+    ),
+    vscode.commands.registerCommand(
+      "markback.saveEditComment",
+      (comment: vscode.Comment) =>
+        deps.plane.saveEditComment(comment).catch((err) =>
+          deps.logger.error(`saveEditComment: ${(err as Error).message}`),
+        ),
+    ),
+    vscode.commands.registerCommand(
+      "markback.cancelEditComment",
+      (comment: vscode.Comment) => deps.plane.cancelEditComment(comment),
+    ),
+    vscode.commands.registerCommand(
+      "markback.deleteComment",
+      (comment: vscode.Comment) =>
+        deps.plane.deleteComment(comment).catch((err) =>
+          deps.logger.error(`deleteComment: ${(err as Error).message}`),
+        ),
+    ),
   );
 }
 

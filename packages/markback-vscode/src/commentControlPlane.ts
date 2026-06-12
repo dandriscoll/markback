@@ -22,6 +22,14 @@ type DraftThreadState = {
   range: vscode.Range;
 };
 
+// A comment carries the id of the .mb record it renders, so edit/delete
+// commands (which receive the Comment) can resolve which record to mutate.
+// `savedBody` stashes the pre-edit text so Cancel can restore it.
+interface MarkbackComment extends vscode.Comment {
+  recordId: string;
+  savedBody?: string | vscode.MarkdownString;
+}
+
 const COMMENT_CONTROLLER_ID = "markback";
 
 export class CommentControlPlane {
@@ -148,7 +156,7 @@ export class CommentControlPlane {
       const thread = this.controller.createCommentThread(
         doc.uri,
         range,
-        desc.comments.map((c) => makeComment(c.body, c.author)),
+        desc.comments.map((c) => makeComment(c.body, c.author, c.recordId)),
       );
       thread.canReply = true;
       thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed;
@@ -264,7 +272,7 @@ export class CommentControlPlane {
   }): ThreadState {
     const sourceAbs = args.draft.sourceUri.fsPath;
     const thread = args.draft.thread;
-    thread.comments = [makeComment(args.body, args.author)];
+    thread.comments = [makeComment(args.body, args.author, args.parentRecordId)];
     thread.contextValue = "markback.persisted";
     thread.label = undefined;
     thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed;
@@ -292,7 +300,7 @@ export class CommentControlPlane {
     body: string;
     author: string | null;
   }): void {
-    const newComment = makeComment(args.body, args.author);
+    const newComment = makeComment(args.body, args.author, args.replyRecordId);
     args.state.thread.comments = [...args.state.thread.comments, newComment];
     args.state.recordIds.push(args.replyRecordId);
   }
@@ -308,7 +316,7 @@ export class CommentControlPlane {
     const sourceAbs = args.sourceUri.fsPath;
     const sidecarPath = sidecarPathFor(sourceAbs);
 
-    args.thread.comments = [makeComment(args.body, args.author)];
+    args.thread.comments = [makeComment(args.body, args.author, args.parentRecordId)];
     args.thread.canReply = true;
     args.thread.contextValue = "markback.persisted";
     args.thread.label = undefined;
@@ -327,6 +335,82 @@ export class CommentControlPlane {
     this.threadsBySource.set(sourceAbs, list);
     this.repaintAllForSource(sourceAbs);
     return state;
+  }
+
+  // ---- editing & deleting existing comments ----
+
+  beginEditComment(comment: vscode.Comment): void {
+    const mb = comment as MarkbackComment;
+    mb.savedBody = comment.body;
+    comment.mode = vscode.CommentMode.Editing;
+    this.reassignContainingThread(comment);
+  }
+
+  cancelEditComment(comment: vscode.Comment): void {
+    const mb = comment as MarkbackComment;
+    if (mb.savedBody !== undefined) {
+      comment.body = mb.savedBody;
+      mb.savedBody = undefined;
+    }
+    comment.mode = vscode.CommentMode.Preview;
+    this.reassignContainingThread(comment);
+  }
+
+  async saveEditComment(comment: vscode.Comment): Promise<void> {
+    const mb = comment as MarkbackComment;
+    const owner = this.findStateForComment(comment);
+    if (!owner) {
+      this.logger.warn("[plane] saveEditComment: no owning thread for comment");
+      return;
+    }
+    const text = bodyText(comment.body).trim();
+    if (!text) {
+      // Blanking a record isn't allowed — treat an empty save as cancel.
+      this.cancelEditComment(comment);
+      vscode.window.showInformationMessage("Markback: a comment cannot be empty.");
+      return;
+    }
+    await this.repo.updateRecord({
+      sidecarPath: owner.sidecarPath,
+      recordId: mb.recordId,
+      feedback: text,
+    });
+    comment.body = new vscode.MarkdownString(text);
+    mb.savedBody = undefined;
+    comment.mode = vscode.CommentMode.Preview;
+    this.reassignContainingThread(comment);
+  }
+
+  async deleteComment(comment: vscode.Comment): Promise<void> {
+    const mb = comment as MarkbackComment;
+    const owner = this.findStateForComment(comment);
+    if (!owner) {
+      this.logger.warn("[plane] deleteComment: no owning thread for comment");
+      return;
+    }
+    await this.repo.deleteRecord({ sidecarPath: owner.sidecarPath, recordId: mb.recordId });
+    // Rebuild this source's threads from the updated sidecar so the deleted
+    // comment (and any orphaned replies) disappear and an emptied thread goes.
+    try {
+      const doc = await vscode.workspace.openTextDocument(owner.sourceUri);
+      await this.refreshDocument(doc);
+    } catch (err: unknown) {
+      this.logger.error(`[plane] deleteComment refresh: ${(err as Error).message}`);
+    }
+  }
+
+  private findStateForComment(comment: vscode.Comment): ThreadState | null {
+    for (const states of this.threadsBySource.values()) {
+      for (const state of states) {
+        if (state.thread.comments.includes(comment)) return state;
+      }
+    }
+    return null;
+  }
+
+  private reassignContainingThread(comment: vscode.Comment): void {
+    const state = this.findStateForComment(comment);
+    if (state) state.thread.comments = [...state.thread.comments];
   }
 
   disposeUntrackedEmptyThread(thread: vscode.CommentThread): boolean {
@@ -436,10 +520,19 @@ function toVsRange(r: RangeLike): vscode.Range {
   );
 }
 
-function makeComment(body: string, author: string | null): vscode.Comment {
+function makeComment(
+  body: string,
+  author: string | null,
+  recordId: string,
+): MarkbackComment {
   return {
     body: new vscode.MarkdownString(body),
     mode: vscode.CommentMode.Preview,
     author: { name: author ?? "unknown" },
+    recordId,
   };
+}
+
+function bodyText(body: string | vscode.MarkdownString): string {
+  return typeof body === "string" ? body : body.value;
 }

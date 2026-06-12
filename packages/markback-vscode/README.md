@@ -87,8 +87,6 @@ Honest about where it's at today:
 
 - **No gutter `+` icon yet** — use the preview bubble, the right-click menu, or
   the keybinding.
-- **No in-editor edit/delete UI for existing comments** — edit the `.mb` file
-  directly (it's just text).
 - **No visual stale-range indicator** — if a source file is edited past a
   recorded range, the comment still renders at its recorded position; a warning
   logs to the **Markback** output channel (View → Output → Markback).
