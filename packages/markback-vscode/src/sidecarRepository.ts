@@ -1,8 +1,11 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import * as os from "node:os";
 import {
   parseString,
   writeString,
+  applyEol,
+  type Eol,
   Record,
   FileRef,
   Diagnostic,
@@ -50,9 +53,27 @@ export class SidecarRepository {
   private cache = new Map<string, CachedSidecar>();
   private mutexes = new Map<string, Promise<unknown>>();
   private logger: RepositoryLogger;
+  private newFileEol: () => Eol;
 
-  constructor(logger: RepositoryLogger = noopLogger) {
+  constructor(
+    logger: RepositoryLogger = noopLogger,
+    newFileEol: () => Eol = () => (os.EOL === "\r\n" ? "\r\n" : "\n"),
+  ) {
     this.logger = logger;
+    this.newFileEol = newFileEol;
+  }
+
+  // EOL to write a sidecar with: preserve an existing file's convention,
+  // otherwise the caller-provided default (OS-native, or the editor's
+  // files.eol when wired from the extension layer).
+  private async resolveEol(sidecarPath: string): Promise<Eol> {
+    try {
+      const buf = await fs.readFile(sidecarPath);
+      if (buf.length > 0) return buf.includes("\r\n") ? "\r\n" : "\n";
+    } catch {
+      // not found — treat as a new file
+    }
+    return this.newFileEol();
   }
 
   private async withMutex<T>(key: string, fn: () => Promise<T>): Promise<T> {
@@ -202,11 +223,14 @@ export class SidecarRepository {
   }
 
   private async writeNow(sidecarPath: string, cached: CachedSidecar): Promise<void> {
-    const text = writeString(cached.records, {
-      versionHeader: true,
-      scope: cached.scope,
-      covers: cached.covers,
-    });
+    const text = applyEol(
+      writeString(cached.records, {
+        versionHeader: true,
+        scope: cached.scope,
+        covers: cached.covers,
+      }),
+      await this.resolveEol(sidecarPath),
+    );
     const dir = path.dirname(sidecarPath);
     const tmpPath = path.join(
       dir,

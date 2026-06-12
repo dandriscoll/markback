@@ -144,3 +144,52 @@ test("load: parse errors block addRecord with a friendly message", async () => {
     );
   });
 });
+
+test("addRecord: new sidecar uses injected default EOL (CRLF)", async () => {
+  await withTempDir(async (dir) => {
+    const sourcePath = path.join(dir, "win.txt");
+    const sidecarPath = path.join(dir, "win.txt.mb");
+    await fs.writeFile(sourcePath, "the lazy fox\n", "utf-8");
+
+    const repo = new SidecarRepository(undefined, () => "\r\n");
+    await repo.addRecord({
+      sidecarPath,
+      sourceAbsPath: sourcePath,
+      range: { start: { line: 0, character: 4 }, end: { line: 0, character: 8 } },
+      feedback: "awkward",
+      by: null,
+    });
+
+    const raw = await fs.readFile(sidecarPath);
+    assert.ok(raw.includes("\r\n"), "expected CRLF in new sidecar");
+    assert.equal(raw.indexOf(Buffer.from("\n").toString()) >= 0, true);
+    // No bare LF that isn't part of CRLF.
+    assert.equal(raw.toString().replace(/\r\n/g, "").includes("\n"), false);
+  });
+});
+
+test("addRecord: existing CRLF sidecar keeps CRLF on append (ignores default)", async () => {
+  await withTempDir(async (dir) => {
+    const sourcePath = path.join(dir, "doc.txt");
+    const sidecarPath = path.join(dir, "doc.txt.mb");
+    await fs.writeFile(sourcePath, "alpha\nbeta\n", "utf-8");
+    // Seed an existing CRLF sidecar.
+    await fs.writeFile(sidecarPath, "%markback 2\r\n\r\n@file ./doc.txt <<< first\r\n", "utf-8");
+
+    // Default says LF, but the existing file's CRLF must win.
+    const repo = new SidecarRepository(undefined, () => "\n");
+    await repo.addRecord({
+      sidecarPath,
+      sourceAbsPath: sourcePath,
+      range: { start: { line: 1, character: 0 }, end: { line: 1, character: 4 } },
+      feedback: "second",
+      by: null,
+    });
+
+    const raw = await fs.readFile(sidecarPath);
+    assert.equal(raw.toString().replace(/\r\n/g, "").includes("\n"), false, "should stay CRLF");
+    const result = parseString(raw.toString(), sidecarPath);
+    assert.equal(result.hasErrors, false);
+    assert.equal(result.records.length, 2);
+  });
+});

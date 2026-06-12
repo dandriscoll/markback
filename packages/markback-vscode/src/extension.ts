@@ -22,7 +22,12 @@ export function activate(
   const logger = new OutputLogger(channel);
   mdPluginLogger = logger;
 
-  const repo = new SidecarRepository(logger);
+  // New sidecars follow the editor's files.eol setting; "auto" (or unset)
+  // resolves to the OS-native ending. Existing sidecars keep their own EOL.
+  const repo = new SidecarRepository(logger, () => {
+    const cfg = vscode.workspace.getConfiguration("files").get<string>("eol");
+    return cfg === "\r\n" || cfg === "\n" ? cfg : process.platform === "win32" ? "\r\n" : "\n";
+  });
   const author = new AuthorResolver(logger);
   const plane = new CommentControlPlane(repo, logger);
   plane.registerSubscriptions(context);

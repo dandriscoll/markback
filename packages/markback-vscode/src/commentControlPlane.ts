@@ -188,23 +188,46 @@ export class CommentControlPlane {
     };
     this.draftBySource.set(sourceAbs, draft);
 
-    // Move keyboard focus to the new thread's reply input so the user's next
-    // keystroke types into the comment, not into the source document. VS Code's
-    // native gutter-"+" affordance does this for free; programmatic creation
-    // does not. `workbench.action.focusCommentOnCurrentLine` is VS Code's
-    // built-in for focusing the comment widget at the cursor's current line —
-    // which is the line our newly-created thread anchors on, because the
-    // caller positioned the cursor before invoking us. On rejection we log
-    // and leave focus where it was.
-    void vscode.commands
-      .executeCommand("workbench.action.focusCommentOnCurrentLine")
-      .then(undefined, (err: unknown) => {
-        this.logger.warn(
-          `[plane] focusCommentOnCurrentLine failed: ${(err as Error).message}`,
-        );
-      });
+    this.focusDraftReply(args.sourceUri, args.range);
 
     return draft;
+  }
+
+  // Move keyboard focus to the new thread's reply input so the user's next
+  // keystroke types into the comment, not the source document. The native
+  // gutter-"+" affordance does this for free; programmatic creation does not.
+  //
+  // `workbench.action.focusCommentOnCurrentLine` focuses the comment widget at
+  // the editor's CURRENT cursor line, so two things have to be true: (1) the
+  // cursor must sit on the new thread's anchor line — we collapse the selection
+  // to range.start to guarantee it (a multi-line selection would otherwise
+  // leave the cursor on the wrong line); and (2) the widget must already be
+  // rendered — firing synchronously after createCommentThread races the render
+  // and silently no-ops, which is the long-standing "focus didn't land" bug.
+  // So we defer to the next tick and retry once on a short delay.
+  private focusDraftReply(sourceUri: vscode.Uri, range: vscode.Range): void {
+    const editor = vscode.window.visibleTextEditors.find(
+      (e) => e.document.uri.toString() === sourceUri.toString(),
+    );
+    if (editor) {
+      editor.selection = new vscode.Selection(range.start, range.start);
+      editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+    }
+
+    const attempt = (): void => {
+      void vscode.commands
+        .executeCommand("workbench.action.focusCommentOnCurrentLine")
+        .then(undefined, (err: unknown) => {
+          this.logger.warn(
+            `[plane] focusCommentOnCurrentLine failed: ${(err as Error).message}`,
+          );
+        });
+    };
+
+    setTimeout(() => {
+      attempt();
+      setTimeout(attempt, 60);
+    }, 0);
   }
 
   findDraftFor(thread: vscode.CommentThread): DraftThreadState | null {

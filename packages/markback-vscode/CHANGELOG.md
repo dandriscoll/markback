@@ -3,6 +3,17 @@
 All notable changes to the Markback VS Code extension are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.2.9
+
+- Reliably focus the comment box when a draft thread opens — the cursor is
+  aligned to the thread's anchor line and the focus is deferred past the
+  widget's render (with one retry), fixing the long-standing "focus didn't
+  land" race.
+- Write sidecar `.mb` files with OS-correct line endings: an existing sidecar
+  keeps its convention, new files follow the editor's `files.eol` (or the
+  OS default). Reading tolerates both LF and CRLF.
+- Rename display text to **Markback**; fix the Marketplace listing icon URL.
+
 ## 0.2.8
 
 - Fix the focus-handoff command id used when opening a new comment thread.
