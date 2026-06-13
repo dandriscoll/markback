@@ -3,6 +3,24 @@
 All notable changes to the Markback VS Code extension are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.3.2
+
+- Pressing **Escape** in a comment box you've typed in now asks before
+  discarding, instead of silently throwing the text away. An empty box still
+  closes immediately on Escape. (A box containing only whitespace is treated as
+  non-empty by VS Code, so it asks too — there's no public API to read the
+  comment input's text and special-case it.)
+
+## 0.3.1
+
+- Fix focus on a new comment from *Comment on Selection* (`Cmd/Ctrl+Shift+M`):
+  the reply box now receives the keyboard so you can type immediately, instead
+  of having to click it (or press Tab) first. The command now drives VS Code's
+  built-in add-comment creation flow — the same path the gutter "+" uses and the
+  only public one that focuses the reply *input* editor. The previous approach
+  created the thread itself and could only focus the comment widget's outer
+  shell, which left the caret one Tab short of the textarea.
+
 ## 0.3.0
 
 - **Edit and delete existing comments** from the thread UI — a pencil and trash

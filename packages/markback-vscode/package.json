@@ -2,7 +2,7 @@
   "name": "markback-vscode",
   "displayName": "Markback",
   "description": "Review Markdown like a doc — comment on the preview (and any file) with feedback saved to a plain-text .mb sidecar that diffs in git.",
-  "version": "0.3.0",
+  "version": "0.3.2",
   "publisher": "dandriscoll",
   "license": "MIT",
   "icon": "icon.png",
@@ -109,6 +109,11 @@
         "command": "markback.cancelEditComment",
         "title": "Cancel",
         "category": "Markback"
+      },
+      {
+        "command": "markback.discardCommentWithConfirm",
+        "title": "Discard Comment",
+        "category": "Markback"
       }
     ],
     "keybindings": [
@@ -117,6 +122,11 @@
         "key": "ctrl+shift+m",
         "mac": "cmd+shift+m",
         "when": "editorTextFocus"
+      },
+      {
+        "command": "markback.discardCommentWithConfirm",
+        "key": "escape",
+        "when": "commentEditorFocused && commentController == markback && !commentIsEmpty"
       }
     ],
     "menus": {
@@ -161,6 +171,10 @@
         },
         {
           "command": "markback.cancelEditComment",
+          "when": "false"
+        },
+        {
+          "command": "markback.discardCommentWithConfirm",
           "when": "false"
         }
       ],

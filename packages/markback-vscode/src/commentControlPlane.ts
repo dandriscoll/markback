@@ -196,46 +196,94 @@ export class CommentControlPlane {
     };
     this.draftBySource.set(sourceAbs, draft);
 
-    this.focusDraftReply(args.sourceUri, args.range);
+    this.focusDraftReply(thread, args.sourceUri, args.range);
 
     return draft;
   }
 
-  // Move keyboard focus to the new thread's reply input so the user's next
-  // keystroke types into the comment, not the source document. The native
-  // gutter-"+" affordance does this for free; programmatic creation does not.
+  // FALLBACK PATH ONLY. The primary `markback.commentSelection` flow now drives
+  // VS Code's built-in `workbench.action.addComment`, which creates the thread
+  // with the reply INPUT focused. This method runs only when that built-in is
+  // unavailable, and the best a third-party extension can then do is focus the
+  // widget SHELL — the caret lands one Tab short of the textarea, but the thread
+  // is usable. (See runCommentSelection for why the built-in is preferred.)
   //
-  // `workbench.action.focusCommentOnCurrentLine` focuses the comment widget at
-  // the editor's CURRENT cursor line, so two things have to be true: (1) the
-  // cursor must sit on the new thread's anchor line — we collapse the selection
-  // to range.start to guarantee it (a multi-line selection would otherwise
-  // leave the cursor on the wrong line); and (2) the widget must already be
-  // rendered — firing synchronously after createCommentThread races the render
-  // and silently no-ops, which is the long-standing "focus didn't land" bug.
-  // So we defer to the next tick and retry once on a short delay.
-  private focusDraftReply(sourceUri: vscode.Uri, range: vscode.Range): void {
+  // Move keyboard focus toward the new thread's reply input so the user's next
+  // keystroke types into the comment, not the source document. The native
+  // gutter-"+" affordance does this for free; programmatic creation does not —
+  // and as of VS Code 1.90 `createCommentThread` no longer auto-focuses or
+  // auto-expands a new thread at all (microsoft/vscode#214661), so we have to
+  // drive focus ourselves.
+  //
+  // The ONLY public lever is the `workbench.action.focusCommentOnCurrentLine`
+  // command. (There is no `CommentThread.reveal()`, no controller/widget focus
+  // method, and no readable focus context key in @types/vscode 1.100. VS Code's
+  // internal `revealCommentThread(thread, comment, focusReply, …)` — which can
+  // drop the caret straight into the reply box — is not exported as a command.)
+  // That command does, verbatim:
+  //     const c = controller.getCommentsAtLine(cursorPosition);
+  //     controller.revealCommentThread(c[0].thread, undefined, false,
+  //                                    CommentWidgetFocus.Widget);
+  // Two consequences drive everything below:
+  //
+  //   (1) It targets the thread AT THE CURSOR LINE. VS Code anchors a thread's
+  //       glyph and input zone at the LAST line of its range, so we park the
+  //       cursor on range.end — not range.start. The old code used range.start,
+  //       which for any multi-line selection sat above the widget and matched
+  //       nothing. (Single-line selections share a line, so this is a no-op.)
+  //
+  //   (2) It runs against whatever widget exists RIGHT NOW. VS Code mounts the
+  //       input zone (a Monaco editor) asynchronously after createCommentThread
+  //       returns; on a COLD first invocation that mount trails a frame or more
+  //       while the comments contribution lazy-initializes. Firing once (or once
+  //       + a single 60ms retry) races the mount, `getCommentsAtLine` comes back
+  //       empty, and the call no-ops — the "focus didn't land on first use" bug.
+  //
+  // We can't observe widget readiness through the public API, so we fire on an
+  // escalating schedule that spans the cold-mount window instead of polling for
+  // "ready". Re-firing after the input is already focused is a harmless no-op
+  // (it neither clears text nor moves the caret), and we bail out early once the
+  // draft is gone (saved/cancelled) so we never poke a disposed widget.
+  private focusDraftReply(
+    thread: vscode.CommentThread,
+    sourceUri: vscode.Uri,
+    range: vscode.Range,
+  ): void {
     const editor = vscode.window.visibleTextEditors.find(
       (e) => e.document.uri.toString() === sourceUri.toString(),
     );
     if (editor) {
-      editor.selection = new vscode.Selection(range.start, range.start);
+      const anchor = new vscode.Position(range.end.line, 0);
+      editor.selection = new vscode.Selection(anchor, anchor);
       editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
     }
 
-    const attempt = (): void => {
-      void vscode.commands
-        .executeCommand("workbench.action.focusCommentOnCurrentLine")
-        .then(undefined, (err: unknown) => {
-          this.logger.warn(
-            `[plane] focusCommentOnCurrentLine failed: ${(err as Error).message}`,
+    // Spread across the cold-mount window: a quick first try for the warm case,
+    // then escalating retries that cover a slow first-invocation render. The
+    // tail stays under ~300ms so we never yank focus back after a human has had
+    // time to start typing.
+    const schedule = [0, 40, 90, 160, 300];
+    const startedAt = Date.now();
+    schedule.forEach((delay, i) => {
+      setTimeout(() => {
+        // Stop if the user already saved/cancelled this draft in the meantime.
+        if (this.findDraftFor(thread) === null) return;
+        void vscode.commands
+          .executeCommand("workbench.action.focusCommentOnCurrentLine")
+          .then(
+            () =>
+              this.logger.info(
+                `[plane] focusCommentOnCurrentLine attempt ${i + 1}/${schedule.length} ` +
+                  `dispatched at +${Date.now() - startedAt}ms (anchor line ${range.end.line})`,
+              ),
+            (err: unknown) =>
+              this.logger.warn(
+                `[plane] focusCommentOnCurrentLine attempt ${i + 1}/${schedule.length} ` +
+                  `failed at +${Date.now() - startedAt}ms: ${(err as Error).message}`,
+              ),
           );
-        });
-    };
-
-    setTimeout(() => {
-      attempt();
-      setTimeout(attempt, 60);
-    }, 0);
+      }, delay);
+    });
   }
 
   findDraftFor(thread: vscode.CommentThread): DraftThreadState | null {

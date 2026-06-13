@@ -44,48 +44,52 @@ after(async () => {
 describe("markback.commentSelection — empirical coverage", function () {
   this.timeout(20000);
 
-  it("focus-handoff target command is registered in VS Code", async () => {
+  // commentSelection drives VS Code's built-in add-comment flow (the only
+  // public path that focuses the reply INPUT). It first aligns the editor
+  // selection to the resolved comment range, so the post-command selection is
+  // the observable for range resolution. We can't read comment-input focus
+  // through any public API, so the reply-box focus itself is verified by hand
+  // in the Extension Development Host (see CHANGELOG 0.3.1).
+
+  it("the built-in add-comment command this relies on is registered", async () => {
+    await getTestApi(); // ensure the extension (and its commenting range) is active
     const cmds = await vscode.commands.getCommands(true);
     assert.ok(
-      cmds.includes("workbench.action.focusCommentOnCurrentLine"),
-      "workbench.action.focusCommentOnCurrentLine must be a registered VS Code command — if this fails, createDraftThread's focus call degrades to a warn-log and the user sees pre-fix behavior",
+      cmds.includes("workbench.action.addComment"),
+      "workbench.action.addComment must exist — commentSelection delegates to it to focus the reply input",
     );
   });
 
-  it("non-empty selection anchors the draft on the selection (regression guard)", async () => {
-    const api = await getTestApi();
-    const { editor, uri } = await openTestFile("alpha beta gamma\n");
-    const start = new vscode.Position(0, 6);
-    const end = new vscode.Position(0, 10);
-    editor.selection = new vscode.Selection(start, end);
+  it("non-empty selection: comment range is the selection (regression guard)", async () => {
+    await getTestApi();
+    const { editor } = await openTestFile("alpha beta gamma\n");
+    editor.selection = new vscode.Selection(0, 6, 0, 10);
 
     await vscode.commands.executeCommand("markback.commentSelection");
 
-    assert.ok(api.hasDraftForSource(uri), "expected a draft on the selection");
-    const range = api.getDraftRangeForSource(uri);
-    assert.equal(range.start.line, 0);
-    assert.equal(range.start.character, 6);
-    assert.equal(range.end.line, 0);
-    assert.equal(range.end.character, 10);
+    const sel = editor.selection;
+    assert.equal(sel.start.line, 0);
+    assert.equal(sel.start.character, 6);
+    assert.equal(sel.end.line, 0);
+    assert.equal(sel.end.character, 10);
   });
 
-  it("v0.2.6: no selection on a word anchors the draft on the word", async () => {
-    const api = await getTestApi();
-    const { editor, uri } = await openTestFile("alpha beta gamma\n");
+  it("v0.2.6: no selection on a word expands the range to the word", async () => {
+    await getTestApi();
+    const { editor } = await openTestFile("alpha beta gamma\n");
     editor.selection = new vscode.Selection(0, 7, 0, 7);
 
     await vscode.commands.executeCommand("markback.commentSelection");
 
-    assert.ok(api.hasDraftForSource(uri), "expected a draft on the word");
-    const range = api.getDraftRangeForSource(uri);
-    assert.equal(range.start.line, 0);
-    assert.equal(range.end.line, 0);
-    assert.equal(range.start.character, 6);
-    assert.equal(range.end.character, 10);
+    const sel = editor.selection;
+    assert.equal(sel.start.line, 0);
+    assert.equal(sel.end.line, 0);
+    assert.equal(sel.start.character, 6);
+    assert.equal(sel.end.character, 10);
   });
 
-  it("v0.2.6: no selection on whitespace within a non-blank line anchors on the line", async () => {
-    const api = await getTestApi();
+  it("v0.2.6: no selection on whitespace within a non-blank line expands to the line", async () => {
+    await getTestApi();
     // Two consecutive spaces give us a position with non-word chars on BOTH
     // sides — VS Code's getWordRangeAtPosition returns undefined only when
     // the position is not adjacent to any word character. A position at the
@@ -94,29 +98,30 @@ describe("markback.commentSelection — empirical coverage", function () {
     // the word, not the line. The double-space below isolates a truly
     // non-word position at col 6.
     const lineText = "alpha  beta gamma";
-    const { editor, uri } = await openTestFile(`${lineText}\n`);
+    const { editor } = await openTestFile(`${lineText}\n`);
     editor.selection = new vscode.Selection(0, 6, 0, 6);
 
     await vscode.commands.executeCommand("markback.commentSelection");
 
-    assert.ok(api.hasDraftForSource(uri), "expected a draft on the line");
-    const range = api.getDraftRangeForSource(uri);
-    assert.equal(range.start.line, 0);
-    assert.equal(range.start.character, 0);
-    assert.equal(range.end.line, 0);
-    assert.equal(range.end.character, lineText.length);
+    const sel = editor.selection;
+    assert.equal(sel.start.line, 0);
+    assert.equal(sel.start.character, 0);
+    assert.equal(sel.end.line, 0);
+    assert.equal(sel.end.character, lineText.length);
   });
 
-  it("v0.2.6: no selection on a blank line creates no draft (info-message branch)", async () => {
-    const api = await getTestApi();
-    const { editor, uri } = await openTestFile("alpha\n\nbeta\n");
+  it("v0.2.6: no selection on a blank line is a no-op (info-message branch)", async () => {
+    await getTestApi();
+    const { editor } = await openTestFile("alpha\n\nbeta\n");
     editor.selection = new vscode.Selection(1, 0, 1, 0);
 
     await vscode.commands.executeCommand("markback.commentSelection");
 
-    assert.ok(
-      !api.hasDraftForSource(uri),
-      "expected NO draft on a blank line — handler should fall through to the info-message abort",
-    );
+    // resolveCommentRange returns null on a blank line, so the handler aborts
+    // before touching the selection or creating any comment.
+    const sel = editor.selection;
+    assert.ok(sel.isEmpty, "expected the selection to remain collapsed");
+    assert.equal(sel.active.line, 1);
+    assert.equal(sel.active.character, 0);
   });
 });

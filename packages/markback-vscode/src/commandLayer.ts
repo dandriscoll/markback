@@ -71,7 +71,39 @@ export function registerCommands(
           deps.logger.error(`deleteComment: ${(err as Error).message}`),
         ),
     ),
+    vscode.commands.registerCommand("markback.discardCommentWithConfirm", () =>
+      runDiscardCommentWithConfirm(deps),
+    ),
   );
+}
+
+// Bound to Escape while a Markback comment input is focused AND has text
+// (`commentEditorFocused && commentController == markback && !commentIsEmpty`).
+// VS Code's default Escape silently hides the thread, losing whatever was
+// typed; we gate that behind a confirmation. An EMPTY input isn't covered by
+// the keybinding, so Escape there falls through to the native hide (close) —
+// which is what we want.
+//
+// Note: `commentIsEmpty` is `!getValue()`, NOT whitespace-trimmed, and there is
+// no public API to read the focused comment input's text from a keybinding
+// command. So a whitespace-only box reads as non-empty and also routes here;
+// we can't silently close it the way a truly empty box closes.
+async function runDiscardCommentWithConfirm(deps: Deps): Promise<void> {
+  deps.logger.info("[command] discardCommentWithConfirm invoked");
+  const choice = await vscode.window.showWarningMessage(
+    "Discard this comment?",
+    { modal: true, detail: "The text you've typed will be lost." },
+    "Discard",
+  );
+  if (choice !== "Discard") return; // Cancel / Escape → keep editing
+  try {
+    // Same close path the native Escape uses; targets the active comment widget.
+    await vscode.commands.executeCommand("workbench.action.hideComment");
+  } catch (err: unknown) {
+    deps.logger.warn(
+      `[command] discardCommentWithConfirm hideComment failed: ${(err as Error).message}`,
+    );
+  }
 }
 
 type PreviewReplyArgs = {
@@ -323,7 +355,29 @@ async function runCommentSelection(deps: Deps): Promise<void> {
     );
     return;
   }
-  deps.plane.createDraftThread({ sourceUri: editor.document.uri, range });
+
+  // Drive VS Code's OWN "add comment" creation flow rather than building the
+  // draft thread ourselves. That is the only public path that drops keyboard
+  // focus into the reply input editor: `workbench.action.addComment` ends up at
+  // `focusCommentEditor()` (CommentWidgetFocus.Editor), whereas the only command
+  // we could fire against a thread we create — `focusCommentOnCurrentLine` —
+  // focuses the widget SHELL (CommentWidgetFocus.Widget), leaving the caret one
+  // Tab short of the textarea. The command reads the editor's selection for the
+  // thread range, so we align the selection to the resolved range first. Submit
+  // is handled by `runSaveComment` → `runGutterAdd`, exactly as the gutter "+".
+  editor.selection = new vscode.Selection(range.start, range.end);
+  editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+  try {
+    await vscode.commands.executeCommand("workbench.action.addComment");
+  } catch (err: unknown) {
+    // If the built-in command is ever unavailable, fall back to our own draft
+    // thread. Focus then lands on the widget shell (not the input), but the
+    // thread is still usable — better than silently doing nothing.
+    deps.logger.warn(
+      `[command] addComment unavailable, using draft fallback: ${(err as Error).message}`,
+    );
+    deps.plane.createDraftThread({ sourceUri: editor.document.uri, range });
+  }
 }
 
 function resolveCommentRange(editor: vscode.TextEditor): vscode.Range | null {
