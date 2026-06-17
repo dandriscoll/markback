@@ -90,14 +90,29 @@ export function registerCommands(
 // we can't silently close it the way a truly empty box closes.
 async function runDiscardCommentWithConfirm(deps: Deps): Promise<void> {
   deps.logger.info("[command] discardCommentWithConfirm invoked");
+  // #8: word the confirm for what's actually being discarded. Editing an
+  // existing comment discards the EDITS, not the comment; composing in a draft
+  // reply box discards the new comment.
+  const isEdit = deps.plane.hasEditInProgress();
   const choice = await vscode.window.showWarningMessage(
-    "Discard this comment?",
-    { modal: true, detail: "The text you've typed will be lost." },
+    isEdit ? "Discard your edits?" : "Discard this comment?",
+    {
+      modal: true,
+      detail: isEdit
+        ? "Your changes to this comment will be lost; the original comment stays."
+        : "The text you've typed will be lost.",
+    },
     "Discard",
   );
   if (choice !== "Discard") return; // Cancel / Escape → keep editing
+  if (isEdit) {
+    // Revert the edit in place and leave edit mode. No collapse, so VS Code's
+    // own "discard these comments?" dialog never fires on top of this one.
+    deps.plane.cancelEditingComments();
+    return;
+  }
   try {
-    // Same close path the native Escape uses; targets the active comment widget.
+    // New draft: same close path the native Escape uses; targets the active widget.
     await vscode.commands.executeCommand("workbench.action.hideComment");
   } catch (err: unknown) {
     deps.logger.warn(
@@ -356,15 +371,28 @@ async function runCommentSelection(deps: Deps): Promise<void> {
     return;
   }
 
-  // Drive VS Code's OWN "add comment" creation flow rather than building the
-  // draft thread ourselves. That is the only public path that drops keyboard
-  // focus into the reply input editor: `workbench.action.addComment` ends up at
-  // `focusCommentEditor()` (CommentWidgetFocus.Editor), whereas the only command
-  // we could fire against a thread we create — `focusCommentOnCurrentLine` —
-  // focuses the widget SHELL (CommentWidgetFocus.Widget), leaving the caret one
-  // Tab short of the textarea. The command reads the editor's selection for the
-  // thread range, so we align the selection to the resolved range first. Submit
-  // is handled by `runSaveComment` → `runGutterAdd`, exactly as the gutter "+".
+  // #9: VS Code's built-in `workbench.action.addComment` only TOGGLES an
+  // existing thread when the line is already commented (its
+  // `addOrToggleCommentAtLine` returns without creating a new comment), so it
+  // cannot start a second comment on the line. When the line is already
+  // occupied, route to our own draft-thread path, which hosts multiple threads
+  // per line; the draft creator skips the focus handoff so the existing thread
+  // isn't re-focused.
+  if (deps.plane.lineIsOccupied(editor.document.uri, range)) {
+    deps.logger.info("[command] line already has a comment; creating a draft for a second comment");
+    deps.plane.createDraftThread({ sourceUri: editor.document.uri, range });
+    return;
+  }
+
+  // First comment on the line: drive VS Code's OWN "add comment" creation flow.
+  // That is the only public path that drops keyboard focus into the reply input
+  // editor: `workbench.action.addComment` ends up at `focusCommentEditor()`
+  // (CommentWidgetFocus.Editor), whereas the only command we could fire against
+  // a thread we create — `focusCommentOnCurrentLine` — focuses the widget SHELL
+  // (CommentWidgetFocus.Widget), leaving the caret one Tab short of the
+  // textarea. The command reads the editor's selection for the thread range, so
+  // we align the selection to the resolved range first. Submit is handled by
+  // `runSaveComment` → `runGutterAdd`, exactly as the gutter "+".
   editor.selection = new vscode.Selection(range.start, range.end);
   editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
   try {

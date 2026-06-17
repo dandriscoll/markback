@@ -12,6 +12,10 @@ let mdPluginLogger: OutputLogger | null = null;
 export type MarkbackTestApi = {
   hasDraftForSource(sourceUri: vscode.Uri): boolean;
   getDraftRangeForSource(sourceUri: vscode.Uri): vscode.Range | null;
+  wasFocusHandoffSkipped(sourceUri: vscode.Uri): boolean | null;
+  persistedThreadCountForSource(sourceUri: vscode.Uri): number;
+  firstCommentForSource(sourceUri: vscode.Uri): vscode.Comment | null;
+  hasEditInProgress(): boolean;
 };
 
 export function activate(
@@ -49,6 +53,10 @@ export function activate(
     _testApi: {
       hasDraftForSource: (uri) => plane.hasDraftForSource(uri),
       getDraftRangeForSource: (uri) => plane.getDraftRangeForSource(uri),
+      wasFocusHandoffSkipped: (uri) => plane.wasFocusHandoffSkipped(uri),
+      persistedThreadCountForSource: (uri) => plane.persistedThreadCountForSource(uri),
+      firstCommentForSource: (uri) => plane.firstCommentForSource(uri),
+      hasEditInProgress: () => plane.hasEditInProgress(),
     },
   };
 }

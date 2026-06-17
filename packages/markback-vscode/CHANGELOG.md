@@ -3,6 +3,18 @@
 All notable changes to the Markback VS Code extension are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.3.3
+
+- Add a **second comment on a line that already has one**: "Comment on
+  Selection" on an already-commented line now opens its own draft instead of
+  just toggling the existing thread (VS Code's built-in add-comment flow only
+  toggles when the line is occupied). The new draft is left visible to click;
+  the first comment on a line still focuses the reply box directly.
+- The **Escape discard prompt now matches what you're discarding**: editing an
+  existing comment asks "Discard your edits?" (and reverts cleanly, leaving the
+  comment intact), while a new comment asks "Discard this comment?". Editing no
+  longer triggers VS Code's separate "discard these comments?" dialog on top.
+
 ## 0.3.2
 
 - Pressing **Escape** in a comment box you've typed in now asks before

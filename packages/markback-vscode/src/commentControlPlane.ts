@@ -4,6 +4,7 @@ import { SidecarRepository } from "./sidecarRepository";
 import { projectRecordsToThreads } from "./projection";
 import { sidecarPathFor, isSidecar, sourcePathFor } from "./sidecarPath";
 import type { RangeLike } from "./rangeCodec";
+import { lineCollides, type RangeShape } from "./focusCollision";
 import { OutputLogger } from "./output";
 
 type ThreadState = {
@@ -36,6 +37,9 @@ export class CommentControlPlane {
   readonly controller: vscode.CommentController;
   private threadsBySource = new Map<string, ThreadState[]>();
   private draftBySource = new Map<string, DraftThreadState>();
+  // Whether the most recent draft on a source skipped the focus handoff because
+  // another comment shared its line (#9). Test-only introspection.
+  private focusSkippedBySource = new Map<string, boolean>();
   private decorationType: vscode.TextEditorDecorationType;
   private disposables: vscode.Disposable[] = [];
 
@@ -196,9 +200,29 @@ export class CommentControlPlane {
     };
     this.draftBySource.set(sourceAbs, draft);
 
-    this.focusDraftReply(thread, args.sourceUri, args.range);
+    // #9: if another thread already anchors on this line, the line-granular
+    // focus command would target IT, not this new draft — so skip the handoff
+    // and leave the visible draft for the user to click.
+    const existing = (this.threadsBySource.get(sourceAbs) ?? []).map((s) =>
+      toRangeShape(s.range),
+    );
+    const skipFocusHandoff = lineCollides(toRangeShape(args.range), existing);
+    this.focusSkippedBySource.set(sourceAbs, skipFocusHandoff);
+
+    this.focusDraftReply(thread, args.sourceUri, args.range, skipFocusHandoff);
 
     return draft;
+  }
+
+  // #9: does the line this range anchors on already host a markback thread?
+  // `markback.commentSelection` uses this to route around VS Code's native
+  // add-comment flow (which would only toggle the existing thread) and create a
+  // second draft on the line instead.
+  lineIsOccupied(sourceUri: vscode.Uri, range: vscode.Range): boolean {
+    const existing = (this.threadsBySource.get(sourceUri.fsPath) ?? []).map((s) =>
+      toRangeShape(s.range),
+    );
+    return lineCollides(toRangeShape(range), existing);
   }
 
   // FALLBACK PATH ONLY. The primary `markback.commentSelection` flow now drives
@@ -248,6 +272,7 @@ export class CommentControlPlane {
     thread: vscode.CommentThread,
     sourceUri: vscode.Uri,
     range: vscode.Range,
+    skipFocusHandoff = false,
   ): void {
     const editor = vscode.window.visibleTextEditors.find(
       (e) => e.document.uri.toString() === sourceUri.toString(),
@@ -256,6 +281,16 @@ export class CommentControlPlane {
       const anchor = new vscode.Position(range.end.line, 0);
       editor.selection = new vscode.Selection(anchor, anchor);
       editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+    }
+
+    if (skipFocusHandoff) {
+      // Another comment already anchors on this line; the line-granular focus
+      // command would land on IT. Leave this new draft expanded and visible
+      // for the user to click rather than stealing focus into the wrong thread.
+      this.logger.info(
+        "[plane] focus handoff skipped: another comment shares this line; new draft left for manual focus",
+      );
+      return;
     }
 
     // Spread across the cold-mount window: a quick first try for the warm case,
@@ -302,6 +337,25 @@ export class CommentControlPlane {
 
   getDraftRangeForSource(sourceUri: vscode.Uri): vscode.Range | null {
     return this.draftBySource.get(sourceUri.fsPath)?.range ?? null;
+  }
+
+  // Test-only: did the most recent draft on this source skip the focus handoff
+  // because another comment already anchored on its line (#9)?
+  wasFocusHandoffSkipped(sourceUri: vscode.Uri): boolean | null {
+    return this.focusSkippedBySource.get(sourceUri.fsPath) ?? null;
+  }
+
+  // Test-only: number of persisted threads for a source (lets the harness wait
+  // for an opened document's sidecar to project before asserting).
+  persistedThreadCountForSource(sourceUri: vscode.Uri): number {
+    return this.threadsBySource.get(sourceUri.fsPath)?.length ?? 0;
+  }
+
+  // Test-only: the first persisted comment for a source, so the edit/cancel
+  // flow (#8) can be driven against a real comment object.
+  firstCommentForSource(sourceUri: vscode.Uri): vscode.Comment | null {
+    const states = this.threadsBySource.get(sourceUri.fsPath) ?? [];
+    return states[0]?.thread.comments[0] ?? null;
   }
 
   findStateFor(thread: vscode.CommentThread): ThreadState | null {
@@ -402,6 +456,41 @@ export class CommentControlPlane {
     }
     comment.mode = vscode.CommentMode.Preview;
     this.reassignContainingThread(comment);
+  }
+
+  // #8: is any markback comment currently being edited (vs. composing a brand
+  // new comment in a draft reply box)? The Escape confirm uses this to word
+  // itself correctly — "discard your edits" for an edit, "discard this comment"
+  // for a new draft — and to route an edit cancel through the clean revert.
+  hasEditInProgress(): boolean {
+    for (const states of this.threadsBySource.values()) {
+      for (const state of states) {
+        for (const comment of state.thread.comments) {
+          if (comment.mode === vscode.CommentMode.Editing) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  // #8: cancel every markback comment in edit mode by reverting it cleanly
+  // (restore saved body, return to Preview). Done in-place, with no collapse, so
+  // VS Code's native "discard these comments?" dialog never fires. Returns the
+  // number of edits cancelled.
+  cancelEditingComments(): number {
+    const editing: vscode.Comment[] = [];
+    for (const states of this.threadsBySource.values()) {
+      for (const state of states) {
+        for (const comment of state.thread.comments) {
+          if (comment.mode === vscode.CommentMode.Editing) editing.push(comment);
+        }
+      }
+    }
+    for (const comment of editing) this.cancelEditComment(comment);
+    if (editing.length > 0) {
+      this.logger.info(`[plane] cancelled ${editing.length} in-progress edit(s)`);
+    }
+    return editing.length;
   }
 
   async saveEditComment(comment: vscode.Comment): Promise<void> {
@@ -566,6 +655,13 @@ function toVsRange(r: RangeLike): vscode.Range {
     r.end.line,
     r.end.character,
   );
+}
+
+function toRangeShape(r: vscode.Range): RangeShape {
+  return {
+    start: { line: r.start.line, character: r.start.character },
+    end: { line: r.end.line, character: r.end.character },
+  };
 }
 
 function makeComment(
