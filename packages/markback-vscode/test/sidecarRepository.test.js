@@ -265,3 +265,54 @@ test("deleteRecord: deleting a parent cascades to its replies", async () => {
     assert.equal(result.records.length, 0);
   });
 });
+
+test("addRecord with content embeds inline excerpt under @file and round-trips", async () => {
+  await withTempDir(async (dir) => {
+    const sourcePath = path.join(dir, "essay.txt");
+    const sidecarPath = path.join(dir, "essay.txt.mb");
+    await fs.writeFile(sourcePath, "the quick brown fox\n", "utf-8");
+
+    const repo = new SidecarRepository();
+    await repo.addRecord({
+      sidecarPath,
+      sourceAbsPath: sourcePath,
+      range: { start: { line: 0, character: 4 }, end: { line: 0, character: 9 } },
+      feedback: "awkward",
+      by: null,
+      content: "quick",
+    });
+
+    const text = await fs.readFile(sidecarPath, "utf-8");
+    // Non-compact form: @file ref, blank line, content, then feedback.
+    assert.match(text, /@file \.\/essay\.txt:1:5-1:9\n\nquick\n<<< awkward/);
+    const result = parseString(text, sidecarPath);
+    assert.equal(result.hasErrors, false, result.diagnostics.map((d) => d.toString()).join(", "));
+    assert.equal(result.records.length, 1);
+    assert.equal(result.records[0].content, "quick");
+    assert.equal(result.records[0].feedback, "awkward");
+    assert.equal(result.records[0].file.startLine, 1);
+  });
+});
+
+test("addRecord without content stays compact range-only (regression)", async () => {
+  await withTempDir(async (dir) => {
+    const sourcePath = path.join(dir, "essay.txt");
+    const sidecarPath = path.join(dir, "essay.txt.mb");
+    await fs.writeFile(sourcePath, "the quick brown fox\n", "utf-8");
+
+    const repo = new SidecarRepository();
+    await repo.addRecord({
+      sidecarPath,
+      sourceAbsPath: sourcePath,
+      range: { start: { line: 0, character: 4 }, end: { line: 0, character: 9 } },
+      feedback: "awkward",
+      by: null,
+    });
+
+    const text = await fs.readFile(sidecarPath, "utf-8");
+    assert.match(text, /@file \.\/essay\.txt:1:5-1:9 <<< awkward/);
+    const result = parseString(text, sidecarPath);
+    assert.equal(result.records.length, 1);
+    assert.equal(result.records[0].content, null);
+  });
+});

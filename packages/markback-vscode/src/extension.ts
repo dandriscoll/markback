@@ -15,6 +15,7 @@ export type MarkbackTestApi = {
   wasFocusHandoffSkipped(sourceUri: vscode.Uri): boolean | null;
   persistedThreadCountForSource(sourceUri: vscode.Uri): number;
   firstCommentForSource(sourceUri: vscode.Uri): vscode.Comment | null;
+  draftThreadForSource(sourceUri: vscode.Uri): vscode.CommentThread | null;
   hasEditInProgress(): boolean;
 };
 
@@ -56,6 +57,7 @@ export function activate(
       wasFocusHandoffSkipped: (uri) => plane.wasFocusHandoffSkipped(uri),
       persistedThreadCountForSource: (uri) => plane.persistedThreadCountForSource(uri),
       firstCommentForSource: (uri) => plane.firstCommentForSource(uri),
+      draftThreadForSource: (uri) => plane.draftThreadForSource(uri),
       hasEditInProgress: () => plane.hasEditInProgress(),
     },
   };

@@ -161,6 +161,10 @@ export class SidecarRepository {
     range: RangeLike;
     feedback: string;
     by: string | null;
+    // Optional literal source excerpt to embed inline under @file (issue #10).
+    // The caller (command layer) decides manageability/safety; the repository
+    // just stores it. Null/absent ⇒ today's range-only compact record.
+    content?: string | null;
   }): Promise<AddResult> {
     return this.withMutex(args.sidecarPath, async () => {
       const cached = await this.ensureLoaded(args.sidecarPath);
@@ -178,6 +182,7 @@ export class SidecarRepository {
         id: generateRecordId(),
         by: args.by,
         file: new FileRef(fileRefValue),
+        content: args.content ?? null,
       });
 
       const nextRecords = [...cached.records, record];

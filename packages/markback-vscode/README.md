@@ -65,6 +65,18 @@ The sidecar is plain, human-readable text — hand-editable and lintable:
 @file ./essay.md:3:5-3:18 <<< awkward phrasing
 ```
 
+When the commented selection is small enough to be manageable, the quoted source
+text is embedded inline under `@file` so the comment is self-contained:
+
+```
+@id e5f6-a7b8
+@by alice@example.com
+@file ./essay.md:3:5-3:18
+
+the quick brown fox
+<<< awkward phrasing
+```
+
 That's the whole format: `<<<` introduces a comment. Records
 [lint](https://markback.org/cli) with `mb --lint` and round-trip with the
 [browser editor](https://markback.org/try-it).
@@ -76,6 +88,14 @@ That's the whole format: `<<<` introduces a comment. Records
 | Setting | Description |
 |---------|-------------|
 | `markback.author` | Identifier written as `@by` on every comment. If empty, falls back to `git config user.email`, then to no `@by` header. |
+| `markback.inlineExcerpt.enabled` | Embed the literal selected source text inline in the `.mb` record when the selection is small enough. Default `true`; set `false` for compact, range-only records. |
+| `markback.inlineExcerpt.maxLines` | Max lines a selection may span to be embedded inline (default `10`). |
+| `markback.inlineExcerpt.maxChars` | Max characters a selection may contain to be embedded inline (default `600`). |
+
+Selections larger than the thresholds — or whose text would break `.mb`
+round-trip (e.g. a line that is exactly `---`, or one starting with `<<<`) — are
+recorded range-only. The Markback output channel logs the reason an excerpt was
+omitted.
 
 > **Restricted Mode:** preview commenting uses VS Code command links, which are
 > disabled in untrusted workspaces. Trust the workspace to enable it — the

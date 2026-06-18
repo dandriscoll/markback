@@ -5,6 +5,11 @@ import { CommentControlPlane } from "./commentControlPlane";
 import { OutputLogger } from "./output";
 import { isSidecar, sidecarPathFor } from "./sidecarPath";
 import { SidecarRepository } from "./sidecarRepository";
+import {
+  decideExcerpt,
+  DEFAULT_EXCERPT_OPTIONS,
+  type ExcerptOptions,
+} from "./excerpt";
 
 type Deps = {
   plane: CommentControlPlane;
@@ -273,12 +278,20 @@ async function runPreviewComment(
   };
 
   try {
+    // Embed the literal source lines for the commented span when manageable
+    // (#10). The preview reports whole-line bounds against the source file.
+    const content = await resolveExcerpt(
+      uri,
+      new vscode.Range(startLine, 0, endLine + 1, 0),
+      deps,
+    );
     await deps.repo.addRecord({
       sidecarPath: sidecarPathFor(uri.fsPath),
       sourceAbsPath: uri.fsPath,
       range,
       feedback: feedback.trim(),
       by: author,
+      content,
     });
     deps.logger.info(
       `[command] previewComment: persisted at ${uri.fsPath}:${startLine + 1}-${endLine + 1}`,
@@ -435,12 +448,14 @@ async function runSaveComment(reply: vscode.CommentReply, deps: Deps): Promise<v
   const draft = deps.plane.findDraftFor(reply.thread);
   if (draft) {
     try {
+      const content = await resolveExcerpt(draft.sourceUri, draft.range, deps);
       const { record } = await deps.repo.addRecord({
         sidecarPath: draft.sidecarPath,
         sourceAbsPath: draft.sourceUri.fsPath,
         range: vsRangeToRangeLike(draft.range),
         feedback: text,
         by: author,
+        content,
       });
       if (!record.id) {
         throw new Error("internal: addRecord returned a record without an id");
@@ -509,12 +524,14 @@ async function runGutterAdd(
   }
   try {
     const sidecarPath = sidecarPathFor(sourceUri.fsPath);
+    const content = await resolveExcerpt(sourceUri, thread.range, deps);
     const { record } = await deps.repo.addRecord({
       sidecarPath,
       sourceAbsPath: sourceUri.fsPath,
       range: vsRangeToRangeLike(thread.range),
       feedback: text,
       by: author,
+      content,
     });
     if (!record.id) {
       throw new Error("internal: addRecord returned a record without an id");
@@ -556,4 +573,44 @@ function vsRangeToRangeLike(range: vscode.Range): { start: { line: number; chara
     start: { line: range.start.line, character: range.start.character },
     end: { line: range.end.line, character: range.end.character },
   };
+}
+
+// #10: read the literal selected source bytes and decide whether they are
+// "manageable" enough to embed as inline content (an excerpt) under @file.
+// Returns the text to embed, or null to keep the record range-only. Never
+// throws: a read failure or any omission degrades to range-only — the excerpt
+// is an enhancement, not a save precondition.
+async function resolveExcerpt(
+  sourceUri: vscode.Uri,
+  range: vscode.Range,
+  deps: Deps,
+): Promise<string | null> {
+  try {
+    const doc = await vscode.workspace.openTextDocument(sourceUri);
+    const selectedText = doc.getText(range);
+
+    const cfg = vscode.workspace.getConfiguration("markback");
+    const opts: ExcerptOptions = {
+      enabled: cfg.get<boolean>("inlineExcerpt.enabled", DEFAULT_EXCERPT_OPTIONS.enabled),
+      maxLines: cfg.get<number>("inlineExcerpt.maxLines", DEFAULT_EXCERPT_OPTIONS.maxLines),
+      maxChars: cfg.get<number>("inlineExcerpt.maxChars", DEFAULT_EXCERPT_OPTIONS.maxChars),
+    };
+
+    const decision = decideExcerpt(selectedText, opts);
+    if (decision.content !== null) {
+      deps.logger.info(
+        `[excerpt] embedded ${decision.content.split("\n").length} line(s) of source as inline content`,
+      );
+    } else {
+      deps.logger.info(`[excerpt] omitted (${decision.omitted}); record stays range-only`);
+    }
+    return decision.content;
+  } catch (err: unknown) {
+    // The excerpt is an enhancement, never a save precondition: any failure
+    // (source unreadable, probe error) degrades to a range-only record.
+    deps.logger.warn(
+      `[excerpt] could not compute excerpt: ${(err as Error).message}; record stays range-only`,
+    );
+    return null;
+  }
 }

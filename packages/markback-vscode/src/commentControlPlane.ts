@@ -339,6 +339,13 @@ export class CommentControlPlane {
     return this.draftBySource.get(sourceUri.fsPath)?.range ?? null;
   }
 
+  // Test-only: the draft's CommentThread, so the integration harness can
+  // synthesize the CommentReply that `markback.saveComment` consumes and drive a
+  // real save end-to-end (used by the #10 inline-excerpt spec).
+  draftThreadForSource(sourceUri: vscode.Uri): vscode.CommentThread | null {
+    return this.draftBySource.get(sourceUri.fsPath)?.thread ?? null;
+  }
+
   // Test-only: did the most recent draft on this source skip the focus handoff
   // because another comment already anchored on its line (#9)?
   wasFocusHandoffSkipped(sourceUri: vscode.Uri): boolean | null {

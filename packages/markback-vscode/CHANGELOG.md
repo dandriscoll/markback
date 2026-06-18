@@ -3,6 +3,20 @@
 All notable changes to the Markback VS Code extension are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.3.4
+
+- **Generated `.mb` records now embed the quoted source text** when the
+  commented selection is small enough to be "manageable" (a word, sentence,
+  line, or short paragraph). The literal selected text is written as inline
+  content under `@file`, so a reviewer reading the `.mb` sees what the comment
+  is about without opening the source (issue #10). Large selections, and any
+  selection whose text would break `.mb` round-trip (e.g. a line that is exactly
+  `---` or starts with `<<<`), are written range-only as before.
+- New settings: `markback.inlineExcerpt.enabled` (default on),
+  `markback.inlineExcerpt.maxLines` (default 10), `markback.inlineExcerpt.maxChars`
+  (default 600). The Markback output channel logs whether each comment embedded
+  an excerpt or why it was omitted.
+
 ## 0.3.3
 
 - Add a **second comment on a line that already has one**: "Comment on
