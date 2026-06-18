@@ -27,7 +27,8 @@ export declare enum WarningCode {
     W008 = "W008",
     W009 = "W009",
     W010 = "W010",
-    W011 = "W011"
+    W011 = "W011",
+    W012 = "W012"
 }
 export type DiagnosticCode = ErrorCode | WarningCode;
 type UnknownMap = {
@@ -74,6 +75,11 @@ export declare class FileRef {
     toString(): string;
 }
 export declare const SourceRef: typeof FileRef;
+export interface Action {
+    verb: string;
+    timestamp: string;
+    actor: string | null;
+}
 export interface RecordInit {
     feedback: string;
     id?: string | null;
@@ -82,6 +88,7 @@ export interface RecordInit {
     file?: FileRef | null;
     input?: FileRef | null;
     tags?: string[];
+    actions?: Action[];
     content?: string | null;
     metadata?: UnknownMap;
     _sourceFile?: string | null;
@@ -96,6 +103,7 @@ export declare class Record {
     file: FileRef | null;
     input: FileRef | null;
     tags: string[];
+    actions: Action[];
     content: string | null;
     metadata: UnknownMap;
     _sourceFile: string | null;
@@ -107,6 +115,7 @@ export declare class Record {
     get prior(): FileRef | null;
     getIdentifier(): string | null;
     hasInlineContent(): boolean;
+    hasActions(): boolean;
     toDict(): UnknownMap;
 }
 export declare class ParseResult {

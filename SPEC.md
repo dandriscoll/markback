@@ -1,8 +1,8 @@
 # Markback V2 Specification
 
-**Version:** 0.2.0
+**Version:** 0.3.0
 **Status:** Draft
-**Date:** 2026-03-20
+**Date:** 2026-06-18
 
 ## 1. Overview
 
@@ -44,6 +44,7 @@ A Markback **record** is the fundamental unit. Every record has:
 | `reply_to` | No | `@id` of the record this one replies to (threading) |
 | `by` | No | Freeform identifier for who provided the feedback |
 | `tags` | No | Space-separated tags for categorization |
+| `actions` | No | Ordered list of timestamped lifecycle actions (created, resolved, ...) |
 | `input` | No | Reference to an item that preceded the content (e.g., a prompt) |
 | `file` | No | Reference to external content (provenance); can coexist with inline content |
 | `content` | No | Inline text content between headers and `<<<` |
@@ -84,6 +85,7 @@ Header lines appear at the start of a record and begin with `@`. They define met
 @id <string-value>
 @reply-to <id-of-parent-record>
 @by <freeform-text>
+@action <verb> <timestamp> [actor]
 @tag <space-separated-tags>
 @input <path-or-uri>
 @file <path-or-uri>
@@ -149,6 +151,38 @@ Identifies who provided the feedback. The value is freeform text.
 - Value is freeform text extending to end of line (trailing whitespace trimmed)
 - Can contain any characters including spaces and special characters
 - Optional -- records without `@by` are valid
+
+#### 3.1.2a `@action` Header
+
+Records a timestamped lifecycle action on the record — for example when it was
+created, resolved, or reopened. A record may carry several `@action` lines; they
+form an **ordered list** in the order written.
+
+```
+@action created 2026-06-17T10:00:00Z
+@action resolved 2026-06-18T14:30:00Z dan@example.com
+@action reopened 2026-06-19T08:15:00Z Reviewer Two
+```
+
+**Format:** `@action <verb> <timestamp> [actor]`
+- **verb**: the first whitespace-delimited token. Freeform; the well-known verbs
+  are `created`, `viewed`, `resolved`, `reopened`. Tools MAY attach meaning to the
+  well-known verbs (e.g. a record is *resolved* when its most recent
+  `resolved`/`reopened` action is `resolved`); other verbs are preserved but carry
+  no defined semantics.
+- **timestamp**: the second token, an ISO-8601 timestamp (e.g.
+  `2026-06-17T10:00:00Z`). Stored verbatim; the format does not validate it.
+- **actor** (optional): everything after the timestamp, trimmed (may contain
+  spaces, like `@by`). Identifies who performed the action. Omitted ⇒ unknown.
+
+**Rules:**
+- `@action` lines accumulate into an ordered list and are NOT merged or deduplicated
+  (each line is a distinct event).
+- `@action` is per-record and is NOT inherited by continuation segments of a
+  multi-segment section (like `@id` and `@reply-to`).
+- A line with fewer than two tokens (no timestamp) is malformed: parsers SHOULD emit
+  W012 and skip the line rather than error the file.
+- Optional -- records without `@action` are valid.
 
 #### 3.1.3 `@tag` Header
 
@@ -685,11 +719,13 @@ Canonical form ensures consistent output for comparison and version control.
 Headers MUST appear in this order:
 
 1. `@id`
-2. `@by`
-3. `@tag`
-4. `@input`
-5. `@file`
-6. Unknown headers (alphabetical)
+2. `@reply-to`
+3. `@by`
+4. `@action` (in recorded order; multiple lines)
+5. `@tag`
+6. `@input`
+7. `@file`
+8. Unknown headers (alphabetical)
 
 ### 7.2 Canonicalization Rules
 
@@ -888,6 +924,7 @@ Discovery priority:
 | W009 | `@input` referenced file not found |
 | W010 | V1 format detected (old header mapped to V2 equivalent) |
 | W011 | `@reply-to` points at an unknown `@id` or forms a cycle |
+| W012 | Malformed `@action` (missing timestamp; expected `<verb> <timestamp> [actor]`) |
 
 ### 9.3 Retired Error Codes
 
@@ -1148,6 +1185,30 @@ Spring whispers goodbye.
 <<< creative; follows haiku structure; quality=excellent
 ```
 
+### 10.16 Action Log (created / resolved)
+
+A record whose review lifecycle is tracked with `@action` lines:
+
+```
+@id c1
+@by dan@example.com
+@action created 2026-06-17T10:00:00Z dan@example.com
+@action resolved 2026-06-18T14:30:00Z Reviewer Two
+@file ./login.py:42
+
+if user.is_admin:
+<<< this branch never fires
+```
+
+This record is *resolved* (its most recent resolve/reopen action is `resolved`).
+Compact records can carry actions too:
+
+```
+@id c2
+@action created 2026-06-17T10:00:00Z dan
+@file ./images/IMG_001.jpg <<< approved; scene=beach
+```
+
 ---
 
 ## 11. MIME Type and Encoding
@@ -1207,9 +1268,14 @@ feedback-content  = *VCHAR                           ; no LF allowed
 
 ; === Compact Record ===
 
-compact-record    = [id-line] [by-line] [tag-line] [input-line] file-feedback-line
+compact-record    = [id-line] [reply-to-line] [by-line] *action-line [tag-line] [input-line] file-feedback-line
 id-line           = "@id" SP value LF
+reply-to-line     = "@reply-to" SP value LF
 by-line           = "@by" SP value LF
+action-line       = "@action" SP verb SP timestamp [SP actor] LF
+verb              = 1*VCHAR                          ; first token, e.g. "created"
+timestamp         = 1*VCHAR                          ; ISO-8601, stored verbatim
+actor             = value                            ; freeform, may contain spaces
 tag-line          = "@tag" SP value LF
 input-line        = "@input" SP path-with-range LF
 file-feedback-line = "@file" SP path-with-range SP "<<<" SP feedback-content LF
@@ -1276,6 +1342,21 @@ Alternatively, run the file through a V2 normalizer which performs all mappings 
 ---
 
 ## 14. Changelog
+
+### v0.3.0 (2026-06-18)
+
+**New features:**
+- `@action` header: a per-record, ordered list of timestamped lifecycle actions
+  (`@action <verb> <timestamp> [actor]`). Well-known verbs: `created`, `viewed`,
+  `resolved`, `reopened`. Repeatable and order-preserving; per-record (not
+  section-inherited); freeform verb; ISO-8601 timestamp stored verbatim; optional
+  actor.
+- W012 warning for a malformed `@action` (missing timestamp).
+- Canonical header order extended: `@id`, `@reply-to`, `@by`, `@action…`, `@tag`,
+  `@input`, `@file`.
+
+**Unchanged:** all other v0.2.0 rules; files without `@action` parse exactly as
+before (the field is additive and optional).
 
 ### v0.2.0 (2026-03-20)
 

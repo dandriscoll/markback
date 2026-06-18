@@ -2,12 +2,15 @@ import * as path from "node:path";
 import { Record } from "markbackjs";
 
 import { markbackToVsRange, type RangeLike } from "./rangeCodec";
+import { isResolved } from "./actionState";
 
 export type ThreadDescriptor = {
   parentRecordId: string;
   range: RangeLike;
   comments: CommentDescriptor[];
   staleReason: string | null;
+  // Resolution state derived from the parent record's action log (#11).
+  resolved: boolean;
 };
 
 export type CommentDescriptor = {
@@ -142,6 +145,7 @@ export function projectRecordsToThreads(args: {
       range,
       comments,
       staleReason: null,
+      resolved: isResolved(parent.actions),
     });
   }
 

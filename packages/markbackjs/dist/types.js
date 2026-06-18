@@ -40,6 +40,7 @@ var WarningCode;
     WarningCode["W009"] = "W009";
     WarningCode["W010"] = "W010";
     WarningCode["W011"] = "W011";
+    WarningCode["W012"] = "W012";
 })(WarningCode || (exports.WarningCode = WarningCode = {}));
 class Diagnostic {
     constructor(init) {
@@ -175,7 +176,7 @@ exports.FileRef = FileRef;
 exports.SourceRef = FileRef;
 class Record {
     constructor(init) {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m;
         this.feedback = init.feedback;
         this.id = (_a = init.id) !== null && _a !== void 0 ? _a : null;
         this.replyTo = (_b = init.replyTo) !== null && _b !== void 0 ? _b : null;
@@ -183,11 +184,12 @@ class Record {
         this.file = (_d = init.file) !== null && _d !== void 0 ? _d : null;
         this.input = (_e = init.input) !== null && _e !== void 0 ? _e : null;
         this.tags = (_f = init.tags) !== null && _f !== void 0 ? _f : [];
-        this.content = (_g = init.content) !== null && _g !== void 0 ? _g : null;
-        this.metadata = (_h = init.metadata) !== null && _h !== void 0 ? _h : {};
-        this._sourceFile = (_j = init._sourceFile) !== null && _j !== void 0 ? _j : null;
-        this._startLine = (_k = init._startLine) !== null && _k !== void 0 ? _k : null;
-        this._endLine = (_l = init._endLine) !== null && _l !== void 0 ? _l : null;
+        this.actions = (_g = init.actions) !== null && _g !== void 0 ? _g : [];
+        this.content = (_h = init.content) !== null && _h !== void 0 ? _h : null;
+        this.metadata = (_j = init.metadata) !== null && _j !== void 0 ? _j : {};
+        this._sourceFile = (_k = init._sourceFile) !== null && _k !== void 0 ? _k : null;
+        this._startLine = (_l = init._startLine) !== null && _l !== void 0 ? _l : null;
+        this._endLine = (_m = init._endLine) !== null && _m !== void 0 ? _m : null;
     }
     // V1 compat getters
     get uri() { return this.id; }
@@ -205,6 +207,9 @@ class Record {
     hasInlineContent() {
         return this.content !== null && this.content.trim().length > 0;
     }
+    hasActions() {
+        return this.actions.length > 0;
+    }
     toDict() {
         return {
             id: this.id,
@@ -213,6 +218,7 @@ class Record {
             file: this.file ? this.file.toString() : null,
             input: this.input ? this.input.toString() : null,
             tags: this.tags,
+            actions: this.actions.map((a) => ({ verb: a.verb, timestamp: a.timestamp, actor: a.actor })),
             content: this.content,
             feedback: this.feedback,
             metadata: this.metadata,

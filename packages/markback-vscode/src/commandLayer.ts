@@ -10,6 +10,7 @@ import {
   DEFAULT_EXCERPT_OPTIONS,
   type ExcerptOptions,
 } from "./excerpt";
+import { VERB_RESOLVED, VERB_REOPENED } from "./actionState";
 
 type Deps = {
   plane: CommentControlPlane;
@@ -79,6 +80,14 @@ export function registerCommands(
     vscode.commands.registerCommand("markback.discardCommentWithConfirm", () =>
       runDiscardCommentWithConfirm(deps),
     ),
+    vscode.commands.registerCommand(
+      "markback.resolveComment",
+      (thread?: vscode.CommentThread) => runSetResolution(thread, VERB_RESOLVED, deps),
+    ),
+    vscode.commands.registerCommand(
+      "markback.reopenComment",
+      (thread?: vscode.CommentThread) => runSetResolution(thread, VERB_REOPENED, deps),
+    ),
   );
 }
 
@@ -123,6 +132,41 @@ async function runDiscardCommentWithConfirm(deps: Deps): Promise<void> {
     deps.logger.warn(
       `[command] discardCommentWithConfirm hideComment failed: ${(err as Error).message}`,
     );
+  }
+}
+
+// #11: Resolve / Reopen a comment thread by appending a `resolved`/`reopened`
+// action (with the resolved author + a timestamp) to its parent record, then
+// re-projecting so the thread restyles. Bound to the thread title menu.
+async function runSetResolution(
+  thread: vscode.CommentThread | undefined,
+  verb: string,
+  deps: Deps,
+): Promise<void> {
+  if (!thread) {
+    vscode.window.showInformationMessage("Markback: invoke Resolve/Reopen from a comment thread.");
+    return;
+  }
+  const state = deps.plane.findStateFor(thread);
+  if (!state) {
+    deps.logger.warn("[command] resolution: no markback state for this thread");
+    return;
+  }
+  const author = await deps.author.resolve();
+  try {
+    await deps.repo.appendAction({
+      sidecarPath: state.sidecarPath,
+      recordId: state.parentRecordId,
+      verb,
+      actor: author,
+    });
+    deps.logger.info(`[action] ${verb} ${state.parentRecordId}`);
+    const doc = await vscode.workspace.openTextDocument(state.sourceUri);
+    await deps.plane.refreshDocument(doc);
+  } catch (err: unknown) {
+    const msg = (err as Error).message;
+    deps.logger.error(`${verb}: ${msg}`);
+    vscode.window.showErrorMessage(`Markback: failed to ${verb} comment — ${msg}`);
   }
 }
 

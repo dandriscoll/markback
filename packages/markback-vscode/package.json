@@ -2,7 +2,7 @@
   "name": "markback-vscode",
   "displayName": "Markback",
   "description": "Review Markdown like a doc — comment on the preview (and any file) with feedback saved to a plain-text .mb sidecar that diffs in git.",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "publisher": "dandriscoll",
   "license": "MIT",
   "icon": "icon.png",
@@ -114,6 +114,16 @@
         "command": "markback.discardCommentWithConfirm",
         "title": "Discard Comment",
         "category": "Markback"
+      },
+      {
+        "command": "markback.resolveComment",
+        "title": "Resolve",
+        "category": "Markback"
+      },
+      {
+        "command": "markback.reopenComment",
+        "title": "Reopen",
+        "category": "Markback"
       }
     ],
     "keybindings": [
@@ -176,6 +186,14 @@
         {
           "command": "markback.discardCommentWithConfirm",
           "when": "false"
+        },
+        {
+          "command": "markback.resolveComment",
+          "when": "false"
+        },
+        {
+          "command": "markback.reopenComment",
+          "when": "false"
         }
       ],
       "comments/comment/title": [
@@ -224,6 +242,16 @@
           "command": "markback.openSidecar",
           "group": "inline",
           "when": "commentController == markback && !commentThreadIsEmpty"
+        },
+        {
+          "command": "markback.resolveComment",
+          "group": "inline",
+          "when": "commentController == markback && commentThread == markback.persisted.unresolved"
+        },
+        {
+          "command": "markback.reopenComment",
+          "group": "inline",
+          "when": "commentController == markback && commentThread == markback.persisted.resolved"
         }
       ]
     },

@@ -3,6 +3,16 @@
 All notable changes to the Markback VS Code extension are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.3.5
+
+- **Comment lifecycle actions** (issue #11). Every new comment now records a
+  `created` action with a timestamp and author. Comment threads gain **Resolve**
+  and **Reopen** actions in the thread toolbar: resolving a comment records a
+  `resolved` action and marks the thread resolved; reopening records a `reopened`
+  action. Resolution state is derived from the action log and restored when a file
+  is reopened. Actions are stored in the `.mb` as `@action <verb> <timestamp>
+  [author]` lines (Markback spec v0.3.0).
+
 ## 0.3.4
 
 - **Generated `.mb` records now embed the quoted source text** when the

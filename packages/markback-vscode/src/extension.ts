@@ -16,6 +16,7 @@ export type MarkbackTestApi = {
   persistedThreadCountForSource(sourceUri: vscode.Uri): number;
   firstCommentForSource(sourceUri: vscode.Uri): vscode.Comment | null;
   draftThreadForSource(sourceUri: vscode.Uri): vscode.CommentThread | null;
+  firstPersistedThreadForSource(sourceUri: vscode.Uri): vscode.CommentThread | null;
   hasEditInProgress(): boolean;
 };
 
@@ -58,6 +59,7 @@ export function activate(
       persistedThreadCountForSource: (uri) => plane.persistedThreadCountForSource(uri),
       firstCommentForSource: (uri) => plane.firstCommentForSource(uri),
       draftThreadForSource: (uri) => plane.draftThreadForSource(uri),
+      firstPersistedThreadForSource: (uri) => plane.firstPersistedThreadForSource(uri),
       hasEditInProgress: () => plane.hasEditInProgress(),
     },
   };

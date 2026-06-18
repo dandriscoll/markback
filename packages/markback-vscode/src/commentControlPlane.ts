@@ -164,7 +164,7 @@ export class CommentControlPlane {
       );
       thread.canReply = true;
       thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed;
-      thread.contextValue = "markback.persisted";
+      applyThreadResolution(thread, desc.resolved);
       states.push({
         thread,
         sidecarPath,
@@ -346,6 +346,12 @@ export class CommentControlPlane {
     return this.draftBySource.get(sourceUri.fsPath)?.thread ?? null;
   }
 
+  // Test-only: the first persisted thread for a source, so the integration
+  // harness can drive resolve/reopen (#11) against a real thread object.
+  firstPersistedThreadForSource(sourceUri: vscode.Uri): vscode.CommentThread | null {
+    return this.threadsBySource.get(sourceUri.fsPath)?.[0]?.thread ?? null;
+  }
+
   // Test-only: did the most recent draft on this source skip the focus handoff
   // because another comment already anchored on its line (#9)?
   wasFocusHandoffSkipped(sourceUri: vscode.Uri): boolean | null {
@@ -382,7 +388,7 @@ export class CommentControlPlane {
     const sourceAbs = args.draft.sourceUri.fsPath;
     const thread = args.draft.thread;
     thread.comments = [makeComment(args.body, args.author, args.parentRecordId)];
-    thread.contextValue = "markback.persisted";
+    applyThreadResolution(thread, false); // freshly created ⇒ unresolved
     thread.label = undefined;
     thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed;
 
@@ -427,7 +433,7 @@ export class CommentControlPlane {
 
     args.thread.comments = [makeComment(args.body, args.author, args.parentRecordId)];
     args.thread.canReply = true;
-    args.thread.contextValue = "markback.persisted";
+    applyThreadResolution(args.thread, false); // freshly created ⇒ unresolved
     args.thread.label = undefined;
     args.thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed;
 
@@ -653,6 +659,19 @@ export class CommentControlPlane {
       states.map((s) => s.range),
     );
   }
+}
+
+// Encode resolution into the thread's native state (gutter/badge styling) AND its
+// contextValue, so the title-menu Resolve/Reopen affordances flip (see package.json
+// `comments/commentThread/title` when-clauses on markback.persisted.(un)resolved).
+export const CTX_UNRESOLVED = "markback.persisted.unresolved";
+export const CTX_RESOLVED = "markback.persisted.resolved";
+
+function applyThreadResolution(thread: vscode.CommentThread, resolved: boolean): void {
+  thread.contextValue = resolved ? CTX_RESOLVED : CTX_UNRESOLVED;
+  thread.state = resolved
+    ? vscode.CommentThreadState.Resolved
+    : vscode.CommentThreadState.Unresolved;
 }
 
 function toVsRange(r: RangeLike): vscode.Range {

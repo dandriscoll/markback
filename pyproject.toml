@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "markback"
-version = "0.2.1"
+version = "0.3.0"
 description = "Markback — comments for anything, in plain text, in git."
 readme = "README.md"
 license = "MIT"

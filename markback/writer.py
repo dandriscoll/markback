@@ -5,7 +5,13 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-from .types import Record, FileRef
+from .types import Action, Record, FileRef
+
+
+def _format_action(action: Action) -> str:
+    """Render an @action header line: @action <verb> <timestamp> [actor]."""
+    suffix = f" {action.actor}" if action.actor else ""
+    return f"@action {action.verb} {action.timestamp}{suffix}"
 
 
 def _resolve_eol(path: Path) -> str:
@@ -77,6 +83,8 @@ def _write_record_canonical(
             lines.append(f"@reply-to {record.reply_to}")
         if record.by:
             lines.append(f"@by {record.by}")
+        for action in record.actions:
+            lines.append(_format_action(action))
         if record.tags:
             lines.append(f"@tag {' '.join(record.tags)}")
         if record.input:
@@ -90,6 +98,8 @@ def _write_record_canonical(
             lines.append(f"@reply-to {record.reply_to}")
         if record.by:
             lines.append(f"@by {record.by}")
+        for action in record.actions:
+            lines.append(_format_action(action))
         if record.tags:
             lines.append(f"@tag {' '.join(record.tags)}")
         if record.input:
@@ -139,6 +149,9 @@ def _can_continue_section(prev: Record, current: Record) -> bool:
         and current.has_inline_content()
         and current.id is None
         and current.reply_to is None
+        # A continuation segment writes no headers, so a record carrying actions
+        # must use the full layout or its action log would be silently dropped.
+        and not current.has_actions()
     )
 
 

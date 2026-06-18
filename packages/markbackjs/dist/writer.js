@@ -6,6 +6,9 @@ exports.writeString = writeString;
 function feedbackIsMultiline(feedback) {
     return feedback.includes("\n");
 }
+function formatAction(a) {
+    return `@action ${a.verb} ${a.timestamp}${a.actor ? ` ${a.actor}` : ""}`;
+}
 function formatFeedback(feedback) {
     if (feedbackIsMultiline(feedback)) {
         return `"""\n${feedback}\n"""`;
@@ -35,6 +38,9 @@ function writeRecordCanonical(record, preferCompact = true) {
         if (record.by) {
             lines.push(`@by ${record.by}`);
         }
+        for (const action of record.actions) {
+            lines.push(formatAction(action));
+        }
         if (record.tags.length > 0) {
             lines.push(`@tag ${record.tags.join(" ")}`);
         }
@@ -52,6 +58,9 @@ function writeRecordCanonical(record, preferCompact = true) {
         }
         if (record.by) {
             lines.push(`@by ${record.by}`);
+        }
+        for (const action of record.actions) {
+            lines.push(formatAction(action));
         }
         if (record.tags.length > 0) {
             lines.push(`@tag ${record.tags.join(" ")}`);
@@ -85,7 +94,10 @@ function canContinueSection(prev, current) {
         && prev.hasInlineContent()
         && current.hasInlineContent()
         && current.id === null
-        && current.replyTo === null);
+        && current.replyTo === null
+        // A continuation segment writes no headers, so a record carrying actions
+        // must use the full layout or its action log would be silently dropped.
+        && !current.hasActions());
 }
 function writeContinuation(record) {
     var _a;

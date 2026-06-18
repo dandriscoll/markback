@@ -46,7 +46,9 @@ Markback keeps the feedback **next to the work, in plain text, in git**:
 4. A sidecar `<filename>.mb` appears next to the file. **Commit it** — the
    feedback now diffs in your PRs.
 5. Reopen the file later: the 💬 badges are still there. Click one to read the
-   thread or **reply**.
+   thread, **reply**, or **Resolve** it (resolved threads are marked, and can be
+   **Reopen**ed). Each comment's created/resolved/reopened actions are timestamped
+   in the `.mb`.
 
 Prefer the editor? Select text in any file → right-click → **Comment on Selection**
 (or `Cmd/Ctrl+Shift+M`).

@@ -316,3 +316,94 @@ test("addRecord without content stays compact range-only (regression)", async ()
     assert.equal(result.records[0].content, null);
   });
 });
+
+test("addRecord auto-stamps a created action with actor and injected timestamp (#11)", async () => {
+  await withTempDir(async (dir) => {
+    const sourcePath = path.join(dir, "essay.txt");
+    const sidecarPath = path.join(dir, "essay.txt.mb");
+    await fs.writeFile(sourcePath, "the lazy fox\n", "utf-8");
+
+    const repo = new SidecarRepository(undefined, undefined, () => "2026-06-17T10:00:00Z");
+    await repo.addRecord({
+      sidecarPath,
+      sourceAbsPath: sourcePath,
+      range: { start: { line: 0, character: 0 }, end: { line: 0, character: 3 } },
+      feedback: "note",
+      by: "dan@example.com",
+    });
+
+    const result = parseString(await fs.readFile(sidecarPath, "utf-8"), sidecarPath);
+    assert.equal(result.hasErrors, false);
+    assert.deepEqual(result.records[0].actions, [
+      { verb: "created", timestamp: "2026-06-17T10:00:00Z", actor: "dan@example.com" },
+    ]);
+  });
+});
+
+test("appendAction appends a resolved action and round-trips (#11)", async () => {
+  await withTempDir(async (dir) => {
+    const sourcePath = path.join(dir, "essay.txt");
+    const sidecarPath = path.join(dir, "essay.txt.mb");
+    await fs.writeFile(sourcePath, "the lazy fox\n", "utf-8");
+
+    let t = 0;
+    const stamps = ["2026-06-17T10:00:00Z", "2026-06-18T14:30:00Z"];
+    const repo = new SidecarRepository(undefined, undefined, () => stamps[t++]);
+    const { record } = await repo.addRecord({
+      sidecarPath,
+      sourceAbsPath: sourcePath,
+      range: { start: { line: 0, character: 0 }, end: { line: 0, character: 3 } },
+      feedback: "note",
+      by: "dan@example.com",
+    });
+
+    await repo.appendAction({
+      sidecarPath,
+      recordId: record.id,
+      verb: "resolved",
+      actor: "reviewer two",
+    });
+
+    const result = parseString(await fs.readFile(sidecarPath, "utf-8"), sidecarPath);
+    assert.equal(result.hasErrors, false);
+    assert.deepEqual(result.records[0].actions, [
+      { verb: "created", timestamp: "2026-06-17T10:00:00Z", actor: "dan@example.com" },
+      { verb: "resolved", timestamp: "2026-06-18T14:30:00Z", actor: "reviewer two" },
+    ]);
+  });
+});
+
+test("appendAction throws for an unknown record id (#11)", async () => {
+  await withTempDir(async (dir) => {
+    const sourcePath = path.join(dir, "essay.txt");
+    const sidecarPath = path.join(dir, "essay.txt.mb");
+    await fs.writeFile(sourcePath, "the lazy fox\n", "utf-8");
+    const repo = new SidecarRepository();
+    await repo.addRecord({
+      sidecarPath,
+      sourceAbsPath: sourcePath,
+      range: { start: { line: 0, character: 0 }, end: { line: 0, character: 3 } },
+      feedback: "note",
+      by: null,
+    });
+    await assert.rejects(
+      () => repo.appendAction({ sidecarPath, recordId: "nope", verb: "resolved", actor: null }),
+      /No record nope/,
+    );
+  });
+});
+
+test("appendAction throws when the sidecar has parse errors (#11)", async () => {
+  await withTempDir(async (dir) => {
+    const sourcePath = path.join(dir, "essay.txt");
+    const sidecarPath = path.join(dir, "essay.txt.mb");
+    await fs.writeFile(sourcePath, "the lazy fox\n", "utf-8");
+    // A record with a header but no <<< feedback is an E001 parse error.
+    await fs.writeFile(sidecarPath, "%markback 2\n\n@id c1\n@by dan\n", "utf-8");
+    const repo = new SidecarRepository();
+    await assert.rejects(
+      () => repo.appendAction({ sidecarPath, recordId: "c1", verb: "resolved", actor: null }),
+      /parse errors/,
+    );
+  });
+});

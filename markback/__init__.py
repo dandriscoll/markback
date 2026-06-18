@@ -3,6 +3,7 @@
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
 from .types import (
+    Action,
     Diagnostic,
     ErrorCode,
     FeedbackParsed,
@@ -50,6 +51,7 @@ except PackageNotFoundError:
 
 __all__ = [
     # V2 Types
+    "Action",
     "Diagnostic",
     "ErrorCode",
     "FeedbackParsed",

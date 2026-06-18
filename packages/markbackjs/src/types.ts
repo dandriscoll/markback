@@ -33,6 +33,7 @@ export enum WarningCode {
   W009 = "W009",
   W010 = "W010",
   W011 = "W011",
+  W012 = "W012",
 }
 
 export type DiagnosticCode = ErrorCode | WarningCode;
@@ -216,6 +217,15 @@ export class FileRef {
 // V1 backward compatibility alias
 export const SourceRef = FileRef;
 
+// A timestamped lifecycle action on a record (e.g. created/resolved/reopened).
+// `verb` and `timestamp` (ISO-8601) are required; `actor` (who, like @by) is
+// optional. The library stores the timestamp verbatim and does not validate it.
+export interface Action {
+  verb: string;
+  timestamp: string;
+  actor: string | null;
+}
+
 export interface RecordInit {
   feedback: string;
   id?: string | null;
@@ -224,6 +234,7 @@ export interface RecordInit {
   file?: FileRef | null;
   input?: FileRef | null;
   tags?: string[];
+  actions?: Action[];
   content?: string | null;
   metadata?: UnknownMap;
   _sourceFile?: string | null;
@@ -239,6 +250,7 @@ export class Record {
   file: FileRef | null;
   input: FileRef | null;
   tags: string[];
+  actions: Action[];
   content: string | null;
   metadata: UnknownMap;
   _sourceFile: string | null;
@@ -253,6 +265,7 @@ export class Record {
     this.file = init.file ?? null;
     this.input = init.input ?? null;
     this.tags = init.tags ?? [];
+    this.actions = init.actions ?? [];
     this.content = init.content ?? null;
     this.metadata = init.metadata ?? {};
     this._sourceFile = init._sourceFile ?? null;
@@ -279,6 +292,10 @@ export class Record {
     return this.content !== null && this.content.trim().length > 0;
   }
 
+  hasActions(): boolean {
+    return this.actions.length > 0;
+  }
+
   toDict(): UnknownMap {
     return {
       id: this.id,
@@ -287,6 +304,7 @@ export class Record {
       file: this.file ? this.file.toString() : null,
       input: this.input ? this.input.toString() : null,
       tags: this.tags,
+      actions: this.actions.map((a) => ({ verb: a.verb, timestamp: a.timestamp, actor: a.actor })),
       content: this.content,
       feedback: this.feedback,
       metadata: this.metadata,

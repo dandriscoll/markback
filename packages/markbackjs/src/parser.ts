@@ -1,6 +1,6 @@
-import { Diagnostic, ErrorCode, FileRef, ParseResult, Record as MarkbackRecord, Severity, WarningCode } from "./types";
+import { Action, Diagnostic, ErrorCode, FileRef, ParseResult, Record as MarkbackRecord, Severity, WarningCode } from "./types";
 
-const KNOWN_HEADERS = new Set(["id", "by", "file", "input", "tag", "reply-to"]);
+const KNOWN_HEADERS = new Set(["id", "by", "file", "input", "tag", "reply-to", "action"]);
 const V1_HEADER_MAP: { [key: string]: string } = { uri: "id", source: "file", prior: "input" };
 
 const HEADER_PATTERN = /^@([a-z][a-z-]*)\s+(.+)$/;
@@ -64,6 +64,22 @@ function parseHeader(line: string): [string | null, string | null, string | null
     return [null, null, `Malformed header syntax: ${stripped}`];
   }
   return [match[1], match[2], null];
+}
+
+// Parse an @action header value: "<verb> <timestamp> [actor]". The actor is
+// everything after the timestamp (may contain spaces), preserved verbatim.
+// Returns [action, null] or [null, errorMessage] when fewer than two tokens.
+function parseActionValue(value: string): [Action | null, string | null] {
+  const trimmed = value.trim();
+  const parts = trimmed.split(/\s+/);
+  if (parts.length < 2) {
+    return [null, `Malformed @action (expected: <verb> <timestamp> [actor]): ${trimmed}`];
+  }
+  const verb = parts[0];
+  const timestamp = parts[1];
+  const afterVerb = trimmed.slice(verb.length).trimStart();
+  const actorRaw = afterVerb.slice(timestamp.length).trimStart();
+  return [{ verb, timestamp, actor: actorRaw.length > 0 ? actorRaw : null }, null];
 }
 
 function parseCompactRecord(line: string): [FileRef | null, string | null, string | null, boolean] {
@@ -139,6 +155,9 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
   const SECTION_INHERITED = new Set(["file", "by", "tag", "input"]);
   let sectionHeaders: { [key: string]: string } = {};
   let currentHeaders: { [key: string]: string } = {};
+  // Actions are per-record and order-preserving — NOT section-inherited and NOT
+  // merged like tags. Reset whenever currentHeaders is reset.
+  let currentActions: Action[] = [];
   let currentContentLines: string[] = [];
   let currentStartLine = 1;
   let pendingId: string | null = null;
@@ -185,6 +204,7 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
         file: fileRef,
         input: inputRef,
         tags,
+        actions: currentActions,
         content,
         _sourceFile: sourceFile ?? null,
         _startLine: currentStartLine,
@@ -203,6 +223,7 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
     }
 
     currentHeaders = { ...sectionHeaders };
+    currentActions = [];
     currentContentLines = [];
     currentStartLine = endLine + 1;
     pendingId = null;
@@ -258,6 +279,7 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
       }
       sectionHeaders = {};
       currentHeaders = {};
+      currentActions = [];
       currentStartLine = lineNum + 1;
       pendingId = null;
       inContent = false;
@@ -319,6 +341,7 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
           file: fileRef,
           input: inputRef,
           tags,
+          actions: currentActions,
           content: null,
           _sourceFile: sourceFile ?? null,
           _startLine: currentStartLine,
@@ -340,6 +363,7 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
         sectionHeaders = inherited;
       }
       currentHeaders = { ...sectionHeaders };
+      currentActions = [];
       currentContentLines = [];
       currentStartLine = lineNum + 1;
       pendingId = null;
@@ -374,6 +398,18 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
 
       if (keyword === "id" && value) {
         pendingId = value;
+      }
+
+      // Actions accumulate into an ordered, per-record list (not the single-value
+      // header map, not merged like tags, not section-inherited).
+      if (keyword === "action") {
+        const [action, actionErr] = parseActionValue(value ?? "");
+        if (actionErr) {
+          addDiagnostic(Severity.WARNING, WarningCode.W012, actionErr, lineNum);
+        } else if (action) {
+          currentActions.push(action);
+        }
+        continue;
       }
 
       // Merge tags

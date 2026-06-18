@@ -43,6 +43,7 @@ class WarningCode(Enum):
     W009 = "W009"  # @input file not found
     W010 = "W010"  # V1 format detected
     W011 = "W011"  # @reply-to points at unknown id (or cycle)
+    W012 = "W012"  # Malformed @action (expected: <verb> <timestamp> [actor])
 
 
 @dataclass
@@ -183,6 +184,21 @@ SourceRef = FileRef
 
 
 @dataclass
+class Action:
+    """A timestamped lifecycle action on a record (created/resolved/reopened/...).
+
+    `verb` and `timestamp` (ISO-8601) are required; `actor` (who, like @by) is
+    optional. The timestamp is stored verbatim and is not validated.
+    """
+    verb: str
+    timestamp: str
+    actor: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        return {"verb": self.verb, "timestamp": self.timestamp, "actor": self.actor}
+
+
+@dataclass
 class Record:
     """A Markback record containing content and feedback."""
     feedback: str
@@ -192,6 +208,7 @@ class Record:
     file: Optional[FileRef] = None
     input: Optional[FileRef] = None
     tags: list[str] = field(default_factory=list)
+    actions: list["Action"] = field(default_factory=list)
     content: Optional[str] = None
     metadata: dict = field(default_factory=dict)
 
@@ -237,6 +254,10 @@ class Record:
         """Check if record has inline content."""
         return self.content is not None and len(self.content.strip()) > 0
 
+    def has_actions(self) -> bool:
+        """Check if record has any recorded actions."""
+        return len(self.actions) > 0
+
     def to_dict(self) -> dict:
         """Convert to JSON-serializable dict."""
         return {
@@ -246,6 +267,7 @@ class Record:
             "file": str(self.file) if self.file else None,
             "input": str(self.input) if self.input else None,
             "tags": self.tags,
+            "actions": [a.to_dict() for a in self.actions],
             "content": self.content,
             "feedback": self.feedback,
             "metadata": self.metadata,

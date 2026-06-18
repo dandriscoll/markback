@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 from .types import (
+    Action,
     Diagnostic,
     ErrorCode,
     FileRef,
@@ -16,7 +17,7 @@ from .types import (
 
 
 # V2 known header keywords
-KNOWN_HEADERS = {"id", "by", "file", "input", "tag", "reply-to"}
+KNOWN_HEADERS = {"id", "by", "file", "input", "tag", "reply-to", "action"}
 
 # V1 header mapping for backward compatibility
 V1_HEADER_MAP = {"uri": "id", "source": "file", "prior": "input"}
@@ -81,6 +82,26 @@ def parse_header(line: str) -> tuple[Optional[str], Optional[str], Optional[str]
     if not match:
         return None, None, f"Malformed header syntax: {stripped}"
     return match.group(1), match.group(2), None
+
+
+def parse_action_value(value: str) -> tuple[Optional[Action], Optional[str]]:
+    """Parse an @action header value: "<verb> <timestamp> [actor]".
+
+    The actor is everything after the timestamp (may contain spaces), preserved
+    verbatim. Returns (action, None) or (None, error_message) when fewer than two
+    tokens are present.
+    """
+    trimmed = value.strip()
+    parts = trimmed.split()
+    if len(parts) < 2:
+        return None, (
+            f"Malformed @action (expected: <verb> <timestamp> [actor]): {trimmed}"
+        )
+    verb = parts[0]
+    timestamp = parts[1]
+    after_verb = trimmed[len(verb):].lstrip()
+    actor_raw = after_verb[len(timestamp):].lstrip()
+    return Action(verb=verb, timestamp=timestamp, actor=actor_raw or None), None
 
 
 def _read_fence_body(lines: list[str], start_idx: int) -> tuple[str, int, bool]:
@@ -161,6 +182,9 @@ def parse_string(
     # A `---` separator clears them. @id is per-record and never inherited.
     section_headers: dict[str, str] = {}
     current_headers: dict[str, str] = {}
+    # Actions are per-record and order-preserving — NOT section-inherited and NOT
+    # merged like tags. Reset whenever current_headers is reset.
+    current_actions: list[Action] = []
     current_content_lines: list[str] = []
     current_start_line: int = 1
     pending_id: Optional[str] = None
@@ -172,7 +196,7 @@ def parse_string(
 
     def finalize_record(feedback: str, end_line: int):
         """Create a record from current state, then reset for next segment."""
-        nonlocal current_headers, current_content_lines, current_start_line
+        nonlocal current_headers, current_actions, current_content_lines, current_start_line
         nonlocal pending_id, in_content, had_blank_line, section_headers
 
         record_id = current_headers.get("id") or pending_id
@@ -203,6 +227,7 @@ def parse_string(
             file=file_ref,
             input=input_ref,
             tags=tags,
+            actions=current_actions,
             content=content,
             _source_file=source_file,
             _start_line=current_start_line,
@@ -220,6 +245,7 @@ def parse_string(
 
         # Reset state for the next segment, inheriting section headers.
         current_headers = section_headers.copy()
+        current_actions = []
         current_content_lines = []
         current_start_line = end_line + 1
         pending_id = None
@@ -296,6 +322,7 @@ def parse_string(
                 )
             section_headers = {}
             current_headers = {}
+            current_actions = []
             current_start_line = line_num + 1
             pending_id = None
             in_content = False
@@ -371,6 +398,7 @@ def parse_string(
                 file=file_ref,
                 input=input_ref,
                 tags=tags,
+                actions=current_actions,
                 content=None,
                 _source_file=source_file,
                 _start_line=current_start_line,
@@ -388,6 +416,7 @@ def parse_string(
                 # The compact line itself supplied @file:
                 section_headers["file"] = str(file_ref)
             current_headers = section_headers.copy()
+            current_actions = []
             current_content_lines = []
             current_start_line = end_line + 1
             pending_id = None
@@ -432,6 +461,21 @@ def parse_string(
 
             if keyword == "id":
                 pending_id = value
+
+            # Actions accumulate into an ordered, per-record list (not the
+            # single-value header map, not merged like tags, not inherited).
+            if keyword == "action":
+                action, action_err = parse_action_value(value or "")
+                if action_err:
+                    add_diagnostic(
+                        Severity.WARNING,
+                        WarningCode.W012,
+                        action_err,
+                        line_num,
+                    )
+                elif action:
+                    current_actions.append(action)
+                continue
 
             # Merge tags if multiple @tag lines
             if keyword == "tag" and "tag" in current_headers:

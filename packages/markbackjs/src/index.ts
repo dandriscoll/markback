@@ -5,6 +5,7 @@ export {
   Severity,
   FileRef,
   SourceRef,
+  Action,
   Record,
   ParseResult,
   FeedbackParsed,

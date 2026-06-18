@@ -6,11 +6,14 @@ import {
   writeString,
   applyEol,
   type Eol,
+  type Action,
   Record,
   FileRef,
   Diagnostic,
   Severity,
 } from "markbackjs";
+
+import { VERB_CREATED } from "./actionState";
 
 import { generateRecordId } from "./ids";
 import {
@@ -54,13 +57,17 @@ export class SidecarRepository {
   private mutexes = new Map<string, Promise<unknown>>();
   private logger: RepositoryLogger;
   private newFileEol: () => Eol;
+  private now: () => string;
 
   constructor(
     logger: RepositoryLogger = noopLogger,
     newFileEol: () => Eol = () => (os.EOL === "\r\n" ? "\r\n" : "\n"),
+    // Clock for action timestamps — injectable so tests are deterministic.
+    now: () => string = () => new Date().toISOString(),
   ) {
     this.logger = logger;
     this.newFileEol = newFileEol;
+    this.now = now;
   }
 
   // EOL to write a sidecar with: preserve an existing file's convention,
@@ -183,6 +190,7 @@ export class SidecarRepository {
         by: args.by,
         file: new FileRef(fileRefValue),
         content: args.content ?? null,
+        actions: [this.createdAction(args.by)],
       });
 
       const nextRecords = [...cached.records, record];
@@ -211,12 +219,43 @@ export class SidecarRepository {
         id: generateRecordId(),
         replyTo: args.parentId,
         by: args.by,
+        actions: [this.createdAction(args.by)],
       });
 
       const nextRecords = [...cached.records, record];
       await this.writeNow(args.sidecarPath, { ...cached, records: nextRecords });
       cached.records = nextRecords;
       return { record };
+    });
+  }
+
+  private createdAction(actor: string | null): Action {
+    return { verb: VERB_CREATED, timestamp: this.now(), actor: actor ?? null };
+  }
+
+  // Append a lifecycle action (e.g. resolved/reopened) to an existing record and
+  // persist. Used by the resolve/reopen commands.
+  async appendAction(args: {
+    sidecarPath: string;
+    recordId: string;
+    verb: string;
+    actor: string | null;
+  }): Promise<{ action: Action }> {
+    return this.withMutex(args.sidecarPath, async () => {
+      const cached = await this.ensureLoaded(args.sidecarPath);
+      if (cached.hasParseErrors) {
+        throw new Error(
+          `Sidecar ${args.sidecarPath} has parse errors; fix the file before changing comment state.`,
+        );
+      }
+      const record = cached.records.find((r) => r.id === args.recordId);
+      if (!record) {
+        throw new Error(`No record ${args.recordId} in ${args.sidecarPath}`);
+      }
+      const action: Action = { verb: args.verb, timestamp: this.now(), actor: args.actor ?? null };
+      record.actions = [...record.actions, action];
+      await this.writeNow(args.sidecarPath, cached);
+      return { action };
     });
   }
 
