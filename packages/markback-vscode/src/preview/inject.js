@@ -12,6 +12,28 @@
 //
 // One-way bridge to the extension via command: URI navigation.
 
+// Pure helper (no DOM): given a textarea value and a caret index, return the
+// index to which an Alt+Backspace word-delete should extend leftward — i.e.
+// the start of the word to remove. Whitespace-delimited: eat the run of
+// whitespace immediately left of the caret, then eat the contiguous run of
+// non-whitespace before it. Defined at module top-level (not inside the IIFE)
+// and exported via the node tail at the bottom of this file so it can be
+// unit-tested under `node --test` without a browser. The webview uses it as a
+// plain global; node never enters the IIFE (the `typeof window` guard returns
+// first) but does pick up the export.
+function markbackIsSpace(ch) {
+  return ch === " " || ch === "\t" || ch === "\n" || ch === "\r" || ch === "\f" || ch === "\v";
+}
+
+function markbackWordDeleteStart(text, caret) {
+  var i = caret;
+  if (i > text.length) i = text.length;
+  if (i < 0) i = 0;
+  while (i > 0 && markbackIsSpace(text.charAt(i - 1))) i--;
+  while (i > 0 && !markbackIsSpace(text.charAt(i - 1))) i--;
+  return i;
+}
+
 (function () {
   "use strict";
 
@@ -386,7 +408,7 @@
 
     var hint = document.createElement("span");
     hint.className = "markback-bubble-reply-hint";
-    hint.textContent = "Enter to send, Shift+Enter for newline";
+    hint.textContent = "Enter to send · Shift+Enter newline · Alt+Backspace deletes a word";
     row.appendChild(hint);
 
     var submit = document.createElement("button");
@@ -429,6 +451,31 @@
       if ((e.key === "Enter" || e.keyCode === 13) && !e.shiftKey) {
         e.preventDefault();
         send();
+        return;
+      }
+      // Alt+Backspace deletes the previous word. A plain webview <textarea>
+      // does not get this for free on Linux/Windows (only Ctrl+Backspace is
+      // native there), so we own it. Ctrl/Cmd+Backspace are left to native.
+      if ((e.key === "Backspace" || e.keyCode === 8) && e.altKey && !e.ctrlKey && !e.metaKey) {
+        var start = input.selectionStart;
+        var end = input.selectionEnd;
+        if (start === null || start === undefined) return; // host doesn't expose selection — let native run
+        // With a selection, delete exactly the selection (like native Backspace);
+        // otherwise delete back to the previous word boundary.
+        var from = (start !== end) ? start : markbackWordDeleteStart(input.value, start);
+        if (from === end) { e.preventDefault(); return; }  // nothing to delete (caret at 0)
+        e.preventDefault();
+        input.setSelectionRange(from, end);
+        // execCommand preserves the textarea's native undo stack; assigning
+        // input.value directly would wipe it. Fall back to a direct splice
+        // only if execCommand is unavailable.
+        var ok = false;
+        try { ok = document.execCommand("delete", false); } catch (err) { ok = false; }
+        if (!ok) {
+          var v = input.value;
+          input.value = v.slice(0, from) + v.slice(end);
+          input.setSelectionRange(from, from);
+        }
       }
     });
 
@@ -528,3 +575,13 @@
     return null;
   }
 })();
+
+// Node-only test hook. In the webview `module` is undefined, so this is skipped
+// and the functions above remain plain browser globals. Under `node --test` the
+// IIFE returns early (no `window`) and only these pure helpers are exported.
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    wordDeleteStart: markbackWordDeleteStart,
+    isSpace: markbackIsSpace,
+  };
+}

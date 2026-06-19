@@ -3,6 +3,16 @@
 All notable changes to the Markback VS Code extension are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## 0.3.6
+
+- **Alt+Backspace deletes the previous word** in the preview reply box (issue
+  #12). The inline reply `<textarea>` in the Markdown preview is a custom webview
+  input that did not inherit the OS word-delete keybinding, so Alt+Backspace did
+  nothing on Linux/Windows. It now deletes the whitespace and word to the left of
+  the caret (or the active selection, if any), and the deletion is undoable with
+  Ctrl+Z. Ctrl+Backspace / Cmd+Backspace are left to native handling. The reply
+  hint now advertises the shortcut.
+
 ## 0.3.5
 
 - **Comment lifecycle actions** (issue #11). Every new comment now records a
