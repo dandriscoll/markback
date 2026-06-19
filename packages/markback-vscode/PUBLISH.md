@@ -52,6 +52,11 @@ npx @vscode/vsce publish --no-dependencies
 - `vsce publish patch|minor|major` can bump the version for you instead of
   editing `package.json` by hand (it also commits the bump if the tree is clean).
 
+**Windows shortcut:** `./publish.ps1` (run from this directory) reads `ADO_PAT`
+from the repo-root `.env` — the Azure DevOps Marketplace PAT — passes it to vsce
+as `VSCE_PAT`, and runs the publish above. Extra args are forwarded, e.g.
+`./publish.ps1 patch`. The `.env` is gitignored; never commit the token.
+
 ## Verify
 
 - Marketplace listing:
