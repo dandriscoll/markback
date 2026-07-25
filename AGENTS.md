@@ -1,6 +1,10 @@
-# Writing Markback V2 (.mb) Files
+# Writing Markback (.mb) files
 
 Markback pairs content with single-line feedback using `<<<` as the delimiter.
+
+This is the quickstart. For the full read/write manual — including the traps
+that cost real time — load `skills/markback/SKILL.md`. `SPEC.md` is the
+authority.
 
 ## Minimal record
 
@@ -22,15 +26,19 @@ Inline content goes here.
 <<< good; quality=high
 ```
 
-Headers: `@id`, `@by`, `@tag`, `@input`, `@file`. All optional. Order: id, by, tag, input, file.
+Headers: `@id`, `@reply-to`, `@by`, `@action`, `@tag`, `@input`, `@file`. All
+optional, and that is also their canonical order.
 
 ## Rules
 
-- `<<<` must be followed by one space then feedback text — all on one line
-- A blank line is **required** between headers and inline content
+- `<<<` must be followed by one space then feedback text
+- a blank line is **required** between headers and inline content — omit it and
+  a content line starting with `@` is parsed as a header, and the content is
+  silently dropped
 - `@file` + inline content can coexist (file is provenance, content is snapshot)
-- Records in multi-record files are separated by `---`
-- Files must be UTF-8 with LF line endings
+- full records are separated by `---`, written directly after the preceding
+  `<<<` line with no blank line before it
+- files must be UTF-8 with LF line endings
 - `@id` values are plain strings (no URI validation)
 
 ## Compact format (one record per line)
@@ -47,6 +55,11 @@ No `---` separator needed between compact records. `@id` can go on the line abov
 @file ./file.txt <<< good
 ```
 
+Do not leave a blank line before those headers — in 0.3.0 that makes the parser
+discard the record's own `@id`, `@by`, and `@tag` and inherit the previous
+record's instead ([#15](https://github.com/dandriscoll/markback/issues/15)).
+Pack compact records together, or separate them with `---`.
+
 ## Multi-record file
 
 ```
@@ -54,13 +67,32 @@ No `---` separator needed between compact records. `@id` can go on the line abov
 
 First content.
 <<< positive
-
 ---
 @id second
 
 Second content.
 <<< negative; needs work
 ```
+
+## Multi-segment section
+
+Several comments on one source, without repeating the headers. Write successive
+content + `<<<` pairs with no `---` between them; the first segment's `@file`,
+`@by`, `@tag`, and `@input` carry to the rest.
+
+```
+@file ./essay.txt
+@by dan
+
+the lazy fox
+<<< awkward
+
+weak ending
+<<< needs punch
+```
+
+That is two records, both on `./essay.txt`. A `---` ends the section. `@id`,
+`@reply-to`, and `@action` are per-record and never inherited.
 
 ## File-level headers (% prefix)
 
@@ -76,6 +108,8 @@ Second content.
 - `%scope` — what issues are being checked (sweep pattern)
 - `%covers` — glob of all files reviewed (absence = clean for scope)
 
+All `%` lines go at the very top, before any record.
+
 ## Tags
 
 ```
@@ -86,6 +120,31 @@ Second content.
 ```
 
 Space-separated. Multiple `@tag` lines merge.
+
+## Threading and lifecycle
+
+`@reply-to` carries the `@id` of the record being replied to:
+
+```
+@id c1
+@file ./login.py:42 <<< this branch never fires
+---
+@id c2
+@reply-to c1
+@file ./login.py:42 <<< it does — covered by test_login_edge()
+```
+
+`@action <verb> <timestamp> [actor]` records a lifecycle event. Repeatable and
+order-preserving; the well-known verbs are `created`, `viewed`, `resolved`,
+`reopened`.
+
+```
+@action created 2026-06-17T10:00:00Z dan@example.com
+@action resolved 2026-06-18T14:30:00Z Reviewer Two
+```
+
+A record is resolved when its most recent `resolved`/`reopened` action is
+`resolved`.
 
 ## Feedback format
 
@@ -100,6 +159,22 @@ Feedback is freeform text. Optional structured convention:
 | `<<< json:{"key":"value"}` | JSON mode |
 
 Segments are separated by `; ` (semicolon + space). Segments with `=` are key-value attributes; without are labels or comments.
+
+## Multi-line feedback
+
+When the text right after `<<< ` is exactly `"""`, the feedback runs until a
+line whose only content is `"""`:
+
+```
+@id c1
+@file ./login.py:42
+<<< """
+This branch looks dead, but I want to double-check before
+suggesting removal.
+"""
+```
+
+Use it only when the feedback genuinely contains a newline.
 
 ## Sidecar files
 
@@ -128,8 +203,11 @@ V1 headers (`@uri`, `@source`, `@prior`) are automatically mapped to V2 (`@id`, 
 
 ## Quick checklist
 
-- [ ] Every record has exactly one `<<<` line
-- [ ] Feedback is a single line (no newlines)
-- [ ] Blank line before inline content
-- [ ] `---` between full records; not needed between compact records
-- [ ] File ends with a newline
+- [ ] every record has exactly one `<<<` line
+- [ ] feedback is a single line, or fenced with `"""`
+- [ ] blank line before inline content
+- [ ] `---` between full records, no blank line before it; not needed between compact records
+- [ ] file ends with a newline
+
+Validate with `mb --lint file.mb`. Add `--no-canonical-check` if the file has
+`%` headers — W008 always fires on those.

@@ -16,7 +16,8 @@ work. CLI, Python, Node, a browser editor, and a VS Code extension.
 - **Try it without installing** — [markback.org/try-it](https://markback.org/try-it)
 - **Install the CLI** — `pip install markback` or `npm install markbackjs`
 - **Read the format** — [Specification](https://markback.org/format/spec)
-- **Comment from your editor** — [VS Code extension v0.1](https://github.com/dandriscoll/markback/tree/main/packages/markback-vscode)
+- **Comment from your editor** — [VS Code extension](https://marketplace.visualstudio.com/items?itemName=dandriscoll.markback-vscode)
+- **Point your coding agent at it** — [`skills/markback`](skills/markback/SKILL.md)
 
 ## Installation
 
@@ -24,7 +25,7 @@ work. CLI, Python, Node, a browser editor, and a VS Code extension.
 pip install -e .
 ```
 
-## Quick Start
+## Quick start
 
 ### Parse a Markback file
 
@@ -73,7 +74,7 @@ if result.has_errors:
         print(d)
 ```
 
-## CLI Usage
+## CLI usage
 
 The CLI is available via `markback` or `mb` (shorthand).
 
@@ -145,17 +146,21 @@ mb --upgrade *.mb              # preview
 mb --upgrade --apply --in-place *.mb  # apply
 ```
 
-## File Format
+## File format
 
-### V2 Headers
+### Headers
 
 | Header | Purpose |
 |--------|---------|
 | `@id` | Record identifier (plain string) |
+| `@reply-to` | The `@id` this record replies to |
 | `@by` | Who provided feedback |
+| `@action` | `<verb> <timestamp> [actor]` lifecycle event; repeatable |
 | `@tag` | Space-separated tags |
 | `@input` | What produced the content (e.g., a prompt) |
 | `@file` | Path to the content being annotated |
+
+Listed in canonical order. All are optional.
 
 ### File-level headers (% prefix)
 
@@ -183,6 +188,49 @@ mb --upgrade --apply --in-place *.mb  # apply
 @file ./images/002.jpg <<< rejected; too dark
 ```
 
+### Multi-segment section
+
+Several comments on one source, without repeating the headers — write
+successive content + `<<<` pairs with no `---` between them:
+
+```
+@file ./essay.txt
+
+the lazy fox
+<<< awkward
+
+weak ending
+<<< needs punch
+```
+
+Two records, both on `./essay.txt`. A `---` ends the section.
+
+### Threading and lifecycle
+
+```
+@id c1
+@action created 2026-06-17T10:00:00Z dan@example.com
+@file ./login.py:42 <<< this branch never fires
+---
+@id c2
+@reply-to c1
+@file ./login.py:42 <<< it does — covered by test_login_edge()
+```
+
+### Multi-line feedback
+
+When the text right after `<<< ` is exactly `"""`, feedback runs until a line
+whose only content is `"""`:
+
+```
+@id c1
+@file ./login.py:42
+<<< """
+This branch looks dead, but I want to double-check before
+suggesting removal.
+"""
+```
+
 ### Sidecar files
 
 Content in `report.pdf`, annotation in `report.pdf.mb`:
@@ -207,7 +255,7 @@ Track issues across batches with meaningful absence:
 
 Files matching `%covers` without annotations are implicitly clean for all `%scope` items.
 
-## V1 Backward Compatibility
+## V1 backward compatibility
 
 V1 headers (`@uri`, `@source`, `@prior`) are automatically mapped to V2 equivalents with a W010 warning. The V2 parser reads V1 files transparently.
 
