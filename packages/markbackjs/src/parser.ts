@@ -165,22 +165,18 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
   let hadBlankLine = false;
   let pastFileHeaders = false;
 
-  const headersEqual = (a: { [key: string]: string }, b: { [key: string]: string }): boolean => {
-    const aKeys = Object.keys(a);
-    const bKeys = Object.keys(b);
-    if (aKeys.length !== bKeys.length) return false;
-    return aKeys.every((k) => a[k] === b[k]);
-  };
-
   const finalizeRecord = (feedback: string, endLine: number) => {
+    // Section-inherited headers (@file, @by, @tag, @input) fall back to the
+    // section value only when this segment did not declare its own. @id and
+    // @reply-to are per-record and never inherited.
     const id = currentHeaders.id ?? pendingId;
-    const by = currentHeaders.by ?? null;
+    const by = currentHeaders.by ?? sectionHeaders.by ?? null;
     const replyTo = currentHeaders["reply-to"] ?? null;
-    const fileStr = currentHeaders.file;
+    const fileStr = currentHeaders.file ?? sectionHeaders.file;
     const fileRef = fileStr ? new FileRef(fileStr) : null;
-    const inputStr = currentHeaders.input;
+    const inputStr = currentHeaders.input ?? sectionHeaders.input;
     const inputRef = inputStr ? new FileRef(inputStr) : null;
-    const tagStr = currentHeaders.tag;
+    const tagStr = currentHeaders.tag ?? sectionHeaders.tag;
     const tags = tagStr ? tagStr.split(/\s+/) : [];
 
     let content: string | null = null;
@@ -222,7 +218,12 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
       sectionHeaders = inherited;
     }
 
-    currentHeaders = { ...sectionHeaders };
+    // Reset for the next segment. currentHeaders holds only what the NEXT
+    // segment declares itself; inherited values live in sectionHeaders and are
+    // merged in at finalize. Starting empty (rather than a copy of
+    // sectionHeaders) is what lets a blank line between records read as a record
+    // separator, and a re-declared @tag override rather than merge.
+    currentHeaders = {};
     currentActions = [];
     currentContentLines = [];
     currentStartLine = endLine + 1;
@@ -274,7 +275,7 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
     }
 
     if (lineType === LineType.SEPARATOR) {
-      if (currentContentLines.length > 0 || !headersEqual(currentHeaders, sectionHeaders)) {
+      if (currentContentLines.length > 0 || Object.keys(currentHeaders).length > 0) {
         addDiagnostic(Severity.ERROR, ErrorCode.E001, "Missing feedback (no <<< delimiter found)", currentStartLine, undefined, records.length);
       }
       sectionHeaders = {};
@@ -288,10 +289,15 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
     }
 
     if (lineType === LineType.BLANK) {
-      if (Object.keys(currentHeaders).length > 0 && !inContent) {
-        hadBlankLine = true;
-      } else if (inContent) {
+      if (inContent) {
         currentContentLines.push("");
+      } else if (Object.keys(currentHeaders).length > 0) {
+        // A blank AFTER this segment's own headers is the header/content
+        // separator (§3.2.1). A blank when the segment has declared no headers
+        // of its own is a between-records separator and is ignored (§3.5) — so
+        // the next @-lines are read as the following record's headers, not as
+        // content.
+        hadBlankLine = true;
       }
       continue;
     }
@@ -326,10 +332,10 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
 
       const id = pendingId ?? currentHeaders.id ?? null;
       const replyTo = currentHeaders["reply-to"] ?? null;
-      const by = currentHeaders.by ?? null;
-      const inputStr = currentHeaders.input;
+      const by = currentHeaders.by ?? sectionHeaders.by ?? null;
+      const inputStr = currentHeaders.input ?? sectionHeaders.input;
       const inputRef = inputStr ? new FileRef(inputStr) : null;
-      const tagStr = currentHeaders.tag;
+      const tagStr = currentHeaders.tag ?? sectionHeaders.tag;
       const tags = tagStr ? tagStr.split(/\s+/) : [];
 
       records.push(
@@ -362,7 +368,7 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
         }
         sectionHeaders = inherited;
       }
-      currentHeaders = { ...sectionHeaders };
+      currentHeaders = {};
       currentActions = [];
       currentContentLines = [];
       currentStartLine = lineNum + 1;
@@ -462,7 +468,7 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
     }
   }
 
-  if (currentContentLines.length > 0 || !headersEqual(currentHeaders, sectionHeaders)) {
+  if (currentContentLines.length > 0 || Object.keys(currentHeaders).length > 0) {
     addDiagnostic(Severity.ERROR, ErrorCode.E001, "Missing feedback (no <<< delimiter found)", currentStartLine, undefined, records.length);
   }
 

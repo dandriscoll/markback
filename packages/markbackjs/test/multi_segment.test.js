@@ -165,3 +165,48 @@ test("writer: roundtrip preserves reply-to", () => {
   const reparsed = parseString(written);
   assert.deepEqual(reparsed.records.map((r) => r.replyTo), [null, "c1"]);
 });
+
+test("multi-segment: blank line between compact records keeps own headers (#15)", () => {
+  // Regression for #15: a blank line between two compact records must not
+  // discard the second record's own @id/@by/@tag. Previously the second record
+  // silently inherited the first record's attribution.
+  const text = [
+    "@id a", "@by alice", "@tag t1", "@file ./x <<< one",
+    "",
+    "@id b", "@by bob", "@tag t2", "@file ./y <<< two",
+    "",
+  ].join("\n");
+  const result = parseString(text);
+  assert.equal(result.hasErrors, false);
+  assert.equal(result.records.length, 2);
+  assert.deepEqual(
+    [result.records[0].id, result.records[0].by, result.records[0].tags],
+    ["a", "alice", ["t1"]],
+  );
+  assert.deepEqual(
+    [result.records[1].id, result.records[1].by, result.records[1].tags],
+    ["b", "bob", ["t2"]],
+  );
+  assert.equal(result.records[1].feedback, "two");
+});
+
+test("multi-segment: re-declared @tag overrides inherited section tag", () => {
+  // Per SPEC §3.4.1 a per-segment header overrides only for that segment; a
+  // re-declared @tag replaces the inherited value rather than merging.
+  const text = [
+    "@by alice", "@tag draft", "@file ./doc.txt",
+    "",
+    "first", "<<< note 1",
+    "",
+    "@tag final",
+    "",
+    "second", "<<< note 2",
+    "",
+  ].join("\n");
+  const result = parseString(text);
+  assert.equal(result.hasErrors, false);
+  assert.equal(result.records.length, 2);
+  assert.deepEqual(result.records[0].tags, ["draft"]);
+  assert.deepEqual(result.records[1].tags, ["final"]);
+  assert.equal(result.records[1].by, "alice");
+});

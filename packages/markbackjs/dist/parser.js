@@ -98,7 +98,7 @@ function readFenceBody(lines, startIdx) {
     return [body.join("\n"), i, false];
 }
 function parseString(text, sourceFile) {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e, _f, _g;
     // Normalize line endings first so CRLF and CR inputs parse identically to LF
     // (no stray carriage returns leak into content or trip whitespace checks).
     text = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
@@ -136,23 +136,19 @@ function parseString(text, sourceFile) {
     let inContent = false;
     let hadBlankLine = false;
     let pastFileHeaders = false;
-    const headersEqual = (a, b) => {
-        const aKeys = Object.keys(a);
-        const bKeys = Object.keys(b);
-        if (aKeys.length !== bKeys.length)
-            return false;
-        return aKeys.every((k) => a[k] === b[k]);
-    };
     const finalizeRecord = (feedback, endLine) => {
-        var _a, _b, _c;
+        var _a, _b, _c, _d, _e, _f, _g;
+        // Section-inherited headers (@file, @by, @tag, @input) fall back to the
+        // section value only when this segment did not declare its own. @id and
+        // @reply-to are per-record and never inherited.
         const id = (_a = currentHeaders.id) !== null && _a !== void 0 ? _a : pendingId;
-        const by = (_b = currentHeaders.by) !== null && _b !== void 0 ? _b : null;
-        const replyTo = (_c = currentHeaders["reply-to"]) !== null && _c !== void 0 ? _c : null;
-        const fileStr = currentHeaders.file;
+        const by = (_c = (_b = currentHeaders.by) !== null && _b !== void 0 ? _b : sectionHeaders.by) !== null && _c !== void 0 ? _c : null;
+        const replyTo = (_d = currentHeaders["reply-to"]) !== null && _d !== void 0 ? _d : null;
+        const fileStr = (_e = currentHeaders.file) !== null && _e !== void 0 ? _e : sectionHeaders.file;
         const fileRef = fileStr ? new types_1.FileRef(fileStr) : null;
-        const inputStr = currentHeaders.input;
+        const inputStr = (_f = currentHeaders.input) !== null && _f !== void 0 ? _f : sectionHeaders.input;
         const inputRef = inputStr ? new types_1.FileRef(inputStr) : null;
-        const tagStr = currentHeaders.tag;
+        const tagStr = (_g = currentHeaders.tag) !== null && _g !== void 0 ? _g : sectionHeaders.tag;
         const tags = tagStr ? tagStr.split(/\s+/) : [];
         let content = null;
         if (currentContentLines.length > 0) {
@@ -188,7 +184,12 @@ function parseString(text, sourceFile) {
             }
             sectionHeaders = inherited;
         }
-        currentHeaders = { ...sectionHeaders };
+        // Reset for the next segment. currentHeaders holds only what the NEXT
+        // segment declares itself; inherited values live in sectionHeaders and are
+        // merged in at finalize. Starting empty (rather than a copy of
+        // sectionHeaders) is what lets a blank line between records read as a record
+        // separator, and a re-declared @tag override rather than merge.
+        currentHeaders = {};
         currentActions = [];
         currentContentLines = [];
         currentStartLine = endLine + 1;
@@ -235,7 +236,7 @@ function parseString(text, sourceFile) {
             pastFileHeaders = true;
         }
         if (lineType === LineType.SEPARATOR) {
-            if (currentContentLines.length > 0 || !headersEqual(currentHeaders, sectionHeaders)) {
+            if (currentContentLines.length > 0 || Object.keys(currentHeaders).length > 0) {
                 addDiagnostic(types_1.Severity.ERROR, types_1.ErrorCode.E001, "Missing feedback (no <<< delimiter found)", currentStartLine, undefined, records.length);
             }
             sectionHeaders = {};
@@ -248,11 +249,16 @@ function parseString(text, sourceFile) {
             continue;
         }
         if (lineType === LineType.BLANK) {
-            if (Object.keys(currentHeaders).length > 0 && !inContent) {
-                hadBlankLine = true;
-            }
-            else if (inContent) {
+            if (inContent) {
                 currentContentLines.push("");
+            }
+            else if (Object.keys(currentHeaders).length > 0) {
+                // A blank AFTER this segment's own headers is the header/content
+                // separator (§3.2.1). A blank when the segment has declared no headers
+                // of its own is a between-records separator and is ignored (§3.5) — so
+                // the next @-lines are read as the following record's headers, not as
+                // content.
+                hadBlankLine = true;
             }
             continue;
         }
@@ -284,10 +290,10 @@ function parseString(text, sourceFile) {
             }
             const id = (_a = pendingId !== null && pendingId !== void 0 ? pendingId : currentHeaders.id) !== null && _a !== void 0 ? _a : null;
             const replyTo = (_b = currentHeaders["reply-to"]) !== null && _b !== void 0 ? _b : null;
-            const by = (_c = currentHeaders.by) !== null && _c !== void 0 ? _c : null;
-            const inputStr = currentHeaders.input;
+            const by = (_d = (_c = currentHeaders.by) !== null && _c !== void 0 ? _c : sectionHeaders.by) !== null && _d !== void 0 ? _d : null;
+            const inputStr = (_e = currentHeaders.input) !== null && _e !== void 0 ? _e : sectionHeaders.input;
             const inputRef = inputStr ? new types_1.FileRef(inputStr) : null;
-            const tagStr = currentHeaders.tag;
+            const tagStr = (_f = currentHeaders.tag) !== null && _f !== void 0 ? _f : sectionHeaders.tag;
             const tags = tagStr ? tagStr.split(/\s+/) : [];
             records.push(new types_1.Record({
                 feedback: actualFeedback !== null && actualFeedback !== void 0 ? actualFeedback : "",
@@ -316,7 +322,7 @@ function parseString(text, sourceFile) {
                 }
                 sectionHeaders = inherited;
             }
-            currentHeaders = { ...sectionHeaders };
+            currentHeaders = {};
             currentActions = [];
             currentContentLines = [];
             currentStartLine = lineNum + 1;
@@ -395,7 +401,7 @@ function parseString(text, sourceFile) {
                 feedback = stripped.slice(FEEDBACK_DELIMITER.length).trimStart();
             }
             if (currentContentLines.length > 0 && !hadBlankLine) {
-                const firstContent = (_d = currentContentLines[0]) !== null && _d !== void 0 ? _d : "";
+                const firstContent = (_g = currentContentLines[0]) !== null && _g !== void 0 ? _g : "";
                 if (firstContent.startsWith("@")) {
                     addDiagnostic(types_1.Severity.ERROR, types_1.ErrorCode.E010, "Missing blank line before inline content (content starts with @)", currentStartLine, undefined, records.length);
                 }
@@ -408,7 +414,7 @@ function parseString(text, sourceFile) {
             currentContentLines.push(line);
         }
     }
-    if (currentContentLines.length > 0 || !headersEqual(currentHeaders, sectionHeaders)) {
+    if (currentContentLines.length > 0 || Object.keys(currentHeaders).length > 0) {
         addDiagnostic(types_1.Severity.ERROR, types_1.ErrorCode.E001, "Missing feedback (no <<< delimiter found)", currentStartLine, undefined, records.length);
     }
     // Check for duplicate IDs

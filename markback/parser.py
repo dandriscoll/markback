@@ -199,14 +199,17 @@ def parse_string(
         nonlocal current_headers, current_actions, current_content_lines, current_start_line
         nonlocal pending_id, in_content, had_blank_line, section_headers
 
+        # Section-inherited headers (@file, @by, @tag, @input) fall back to the
+        # section value only when this segment did not declare its own. @id and
+        # @reply-to are per-record and never inherited.
         record_id = current_headers.get("id") or pending_id
-        by = current_headers.get("by")
+        by = current_headers.get("by") or section_headers.get("by")
         reply_to = current_headers.get("reply-to")
-        file_str = current_headers.get("file")
+        file_str = current_headers.get("file") or section_headers.get("file")
         file_ref = FileRef(file_str) if file_str else None
-        input_str = current_headers.get("input")
+        input_str = current_headers.get("input") or section_headers.get("input")
         input_ref = FileRef(input_str) if input_str else None
-        tag_str = current_headers.get("tag")
+        tag_str = current_headers.get("tag") or section_headers.get("tag")
         tags = tag_str.split() if tag_str else []
 
         content = None
@@ -243,8 +246,12 @@ def parse_string(
                 if k in SECTION_INHERITED
             }
 
-        # Reset state for the next segment, inheriting section headers.
-        current_headers = section_headers.copy()
+        # Reset state for the next segment. current_headers holds only what the
+        # NEXT segment declares itself; inherited values live in section_headers
+        # and are merged in at finalize. Starting empty (rather than a copy of
+        # section_headers) is what lets a blank line between records read as a
+        # record separator, and a re-declared @tag override rather than merge.
+        current_headers = {}
         current_actions = []
         current_content_lines = []
         current_start_line = end_line + 1
@@ -312,7 +319,7 @@ def parse_string(
         if line_type == LineType.SEPARATOR:
             # `---` ends the section: clear inheritable headers entirely.
             # Error only if user added headers/content since last finalize.
-            if current_content_lines or current_headers != section_headers:
+            if current_content_lines or current_headers:
                 add_diagnostic(
                     Severity.ERROR,
                     ErrorCode.E001,
@@ -330,10 +337,15 @@ def parse_string(
             continue
 
         if line_type == LineType.BLANK:
-            if current_headers and not in_content:
-                had_blank_line = True
-            elif in_content:
+            if in_content:
                 current_content_lines.append("")
+            elif current_headers:
+                # A blank AFTER this segment's own headers is the
+                # header/content separator (§3.2.1). A blank when the segment
+                # has declared no headers of its own is a between-records
+                # separator and is ignored (§3.5) — so the next @-lines are
+                # read as the following record's headers, not as content.
+                had_blank_line = True
             continue
 
         if line_type == LineType.COMPACT_RECORD:
@@ -383,11 +395,11 @@ def parse_string(
                 )
 
             record_id = pending_id or current_headers.get("id")
-            by = current_headers.get("by")
+            by = current_headers.get("by") or section_headers.get("by")
             reply_to = current_headers.get("reply-to")
-            input_str = current_headers.get("input")
+            input_str = current_headers.get("input") or section_headers.get("input")
             input_ref = FileRef(input_str) if input_str else None
-            tag_str = current_headers.get("tag")
+            tag_str = current_headers.get("tag") or section_headers.get("tag")
             tags = tag_str.split() if tag_str else []
 
             record = Record(
@@ -415,7 +427,7 @@ def parse_string(
                 }
                 # The compact line itself supplied @file:
                 section_headers["file"] = str(file_ref)
-            current_headers = section_headers.copy()
+            current_headers = {}
             current_actions = []
             current_content_lines = []
             current_start_line = end_line + 1
@@ -539,7 +551,7 @@ def parse_string(
             continue
 
     # Check for unterminated record at end of file
-    if current_content_lines or current_headers != section_headers:
+    if current_content_lines or current_headers:
         add_diagnostic(
             Severity.ERROR,
             ErrorCode.E001,

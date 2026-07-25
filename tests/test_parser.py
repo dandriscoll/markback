@@ -252,6 +252,77 @@ class TestMultiSegment:
         assert str(result.records[0].file) == "./doc.txt"
         assert str(result.records[1].file) == "./doc.txt"
 
+    def test_blank_line_between_compact_records_keeps_own_headers(self):
+        # Regression for #15: a blank line between two compact records must not
+        # discard the second record's own @id/@by/@tag (§3.5 "blank lines
+        # between compact records are ignored"). Previously the second record
+        # silently inherited the first record's attribution.
+        text = (
+            "@id a\n@by alice\n@tag t1\n@file ./x <<< one\n"
+            "\n"
+            "@id b\n@by bob\n@tag t2\n@file ./y <<< two\n"
+        )
+        result = parse_string(text)
+        assert not result.has_errors
+        assert len(result.records) == 2
+        assert (result.records[0].id, result.records[0].by, result.records[0].tags) == (
+            "a", "alice", ["t1"],
+        )
+        assert (result.records[1].id, result.records[1].by, result.records[1].tags) == (
+            "b", "bob", ["t2"],
+        )
+        assert result.records[1].feedback == "two"
+
+    def test_blank_line_matches_separator_and_no_separator(self):
+        # The three layouts (blank line, no separator, --- separator) must all
+        # yield the same fully-declared records.
+        blank = "@id a\n@by alice\n@tag t1\n@file ./x <<< one\n\n@id b\n@by bob\n@tag t2\n@file ./y <<< two\n"
+        nosep = "@id a\n@by alice\n@tag t1\n@file ./x <<< one\n@id b\n@by bob\n@tag t2\n@file ./y <<< two\n"
+        sep = "@id a\n@by alice\n@tag t1\n@file ./x <<< one\n---\n@id b\n@by bob\n@tag t2\n@file ./y <<< two\n"
+
+        def shape(text):
+            return [
+                (r.id, r.by, r.tags, r.feedback)
+                for r in parse_string(text).records
+            ]
+
+        assert shape(blank) == shape(nosep) == shape(sep)
+        assert shape(blank)[1] == ("b", "bob", ["t2"], "two")
+
+    def test_segment_tag_overrides_inherited_section_tag(self):
+        # §3.4.1: "Per-segment headers override only for that segment." A
+        # re-declared @tag replaces the inherited section value rather than
+        # merging with it (merging is only for repeated @tag within one segment).
+        text = (
+            "@by alice\n@tag draft\n@file ./doc.txt\n\n"
+            "first\n<<< note 1\n\n"
+            "@tag final\n\nsecond\n<<< note 2\n"
+        )
+        result = parse_string(text)
+        assert not result.has_errors
+        assert len(result.records) == 2
+        assert result.records[0].tags == ["draft"]
+        assert result.records[1].tags == ["final"]
+        # @by was not re-declared, so the section value resumes.
+        assert result.records[1].by == "alice"
+
+    def test_spec_5_2_additional_headers_example(self):
+        # SPEC §5.2 "With additional headers" — its own example is blank-line
+        # separated compact records; it must parse as documented.
+        text = (
+            "%markback 2\n\n"
+            "@id review-001\n@by dan@example.com\n@tag batch-1\n"
+            "@file ./batch1/item1.txt <<< positive\n\n"
+            "@id review-002\n@by dan@example.com\n@tag batch-1\n"
+            "@file ./batch1/item2.txt <<< negative; confusing instructions\n"
+        )
+        result = parse_string(text)
+        assert not result.has_errors
+        assert [r.id for r in result.records] == ["review-001", "review-002"]
+        assert all(r.by == "dan@example.com" for r in result.records)
+        assert all(r.tags == ["batch-1"] for r in result.records)
+        assert result.records[1].feedback == "negative; confusing instructions"
+
     def test_separator_after_clean_finalize_is_not_an_error(self):
         text = "@file ./doc.txt\n\ncontent\n<<< feedback\n---\n"
         result = parse_string(text)
