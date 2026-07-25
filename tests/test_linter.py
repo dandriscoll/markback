@@ -321,3 +321,33 @@ class TestReplyToLint:
         result = lint_string(text, check_sources=False, check_canonical=False)
         w011 = [d for d in result.diagnostics if d.code == WarningCode.W011]
         assert not w011
+
+
+class TestCanonicalFormat:
+    """W008 canonical-format check."""
+
+    def test_no_w008_on_file_with_percent_headers(self):
+        # Regression for #14: a canonical file carrying %markback/%scope/%covers
+        # must not report W008. The comparison render previously dropped the %
+        # headers, so any file with them was a guaranteed false positive.
+        text = (
+            "%markback 2\n"
+            "%scope correctness style\n"
+            "%covers ./src/*.py\n"
+            "\n"
+            "@file ./src/util.py <<< style; rename x\n"
+        )
+        result = lint_string(text, check_sources=False, check_canonical=True)
+        w008 = [d for d in result.diagnostics if d.code == WarningCode.W008]
+        assert not w008
+
+    def test_no_w008_on_scope_only_header(self):
+        text = "%scope correctness\n\n@file ./a.py <<< tighten x\n"
+        result = lint_string(text, check_sources=False, check_canonical=True)
+        assert not [d for d in result.diagnostics if d.code == WarningCode.W008]
+
+    def test_w008_still_fires_on_noncanonical(self):
+        # A genuinely non-canonical file (blank line before ---) still reports W008.
+        text = "@id a\n@file ./x.py <<< one\n\n---\n@id b\n@file ./y.py <<< two\n"
+        result = lint_string(text, check_sources=False, check_canonical=True)
+        assert [d for d in result.diagnostics if d.code == WarningCode.W008]

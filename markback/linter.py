@@ -248,11 +248,22 @@ def lint_canonical_format(
     records: list[Record],
     original_text: str,
     file: Optional[Path],
+    scope: Optional[list[str]] = None,
+    covers: Optional[str] = None,
+    version: Optional[int] = None,
 ) -> list[Diagnostic]:
     """Check if file is in canonical format."""
     diagnostics: list[Diagnostic] = []
 
-    canonical = write_string(records, version_header=False)
+    # The comparison render must carry the file's own %-headers, otherwise any
+    # canonical file with %markback/%scope/%covers mismatches and reports a
+    # false W008. version_header is on iff the file declared a %markback line.
+    canonical = write_string(
+        records,
+        scope=scope,
+        covers=covers,
+        version_header=version is not None,
+    )
     original_normalized = original_text.replace('\r\n', '\n').replace('\r', '\n')
 
     if original_normalized != canonical:
@@ -307,6 +318,9 @@ def lint_string(
             result.records,
             text,
             source_file,
+            scope=result.scope,
+            covers=result.covers,
+            version=result.version,
         ))
 
     return result

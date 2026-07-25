@@ -376,3 +376,18 @@ test("lintString: single-line feedback unchanged by fence logic", () => {
   assert.equal(result.hasErrors, false);
   assert.equal(result.records[0].feedback, "simple feedback");
 });
+
+test("canonical: no W008 on a file with %-headers (#14)", () => {
+  // Regression for #14: a canonical file carrying %markback/%scope/%covers must
+  // not report W008. The comparison render previously dropped the % headers.
+  const text =
+    "%markback 2\n%scope correctness style\n%covers ./src/*.py\n\n@file ./src/util.py <<< style; rename x\n";
+  const result = lintString(text, { checkSources: false, checkCanonical: true });
+  assert.equal(findCode(result.diagnostics, WarningCode.W008).length, 0);
+});
+
+test("canonical: no W008 on a scope-only header", () => {
+  const text = "%scope correctness\n\n@file ./a.py <<< tighten x\n";
+  const result = lintString(text, { checkSources: false, checkCanonical: true });
+  assert.equal(findCode(result.diagnostics, WarningCode.W008).length, 0);
+});

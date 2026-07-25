@@ -211,9 +211,24 @@ function lintReplyTo(records, sourceFile) {
     });
     return diagnostics;
 }
-function lintCanonicalFormat(records, originalText, file) {
+function lintCanonicalFormat(records, originalText, file, scope, covers, version) {
     const diagnostics = [];
-    const canonical = records.length === 1 ? `${(0, writer_1.writeRecordCanonical)(records[0])}\n` : (0, writer_1.writeRecordsMulti)(records);
+    // The comparison render must carry the file's own %-headers, otherwise any
+    // canonical file with %markback/%scope/%covers mismatches and reports a
+    // false W008. The record body is written exactly as before; the file-level
+    // headers are prepended when the file declared them.
+    const body = records.length === 1 ? `${(0, writer_1.writeRecordCanonical)(records[0])}\n` : (0, writer_1.writeRecordsMulti)(records);
+    const headerLines = [];
+    if (version !== null && version !== undefined) {
+        headerLines.push("%markback 2");
+    }
+    if (scope && scope.length > 0) {
+        headerLines.push(`%scope ${scope.join(" ")}`);
+    }
+    if (covers) {
+        headerLines.push(`%covers ${covers}`);
+    }
+    const canonical = headerLines.length > 0 ? `${headerLines.join("\n")}\n\n${body}` : body;
     const originalNormalized = originalText.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
     if (originalNormalized !== canonical) {
         diagnostics.push(new types_1.Diagnostic({
@@ -263,7 +278,7 @@ function lintString(text, options = {}) {
     });
     result.diagnostics.push(...lintReplyTo(result.records, sourceFile));
     if (checkCanonical && result.records.length > 0 && !result.hasErrors) {
-        result.diagnostics.push(...lintCanonicalFormat(result.records, text, sourceFile));
+        result.diagnostics.push(...lintCanonicalFormat(result.records, text, sourceFile, result.scope, result.covers, result.version));
     }
     return result;
 }
