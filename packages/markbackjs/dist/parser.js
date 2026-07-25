@@ -1,9 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.parseString = parseString;
+const _headers_1 = require("./_headers");
 const types_1 = require("./types");
-const KNOWN_HEADERS = new Set(["id", "by", "file", "input", "tag", "reply-to", "action"]);
-const V1_HEADER_MAP = { uri: "id", source: "file", prior: "input" };
 const HEADER_PATTERN = /^@([a-z][a-z-]*)\s+(.+)$/;
 const FEEDBACK_DELIMITER = "<<<";
 const FENCE_MARKER = '"""';
@@ -124,7 +123,7 @@ function parseString(text, sourceFile) {
     };
     // sectionHeaders carries forward across <<< boundaries within a section.
     // A `---` separator clears them. @id is per-record and never inherited.
-    const SECTION_INHERITED = new Set(["file", "by", "tag", "input"]);
+    // SECTION_INHERITED comes from the shared header registry (./_headers).
     let sectionHeaders = {};
     let currentHeaders = {};
     // Actions are per-record and order-preserving — NOT section-inherited and NOT
@@ -178,7 +177,7 @@ function parseString(text, sourceFile) {
         if (Object.keys(sectionHeaders).length === 0) {
             const inherited = {};
             for (const [k, v] of Object.entries(currentHeaders)) {
-                if (SECTION_INHERITED.has(k)) {
+                if (_headers_1.SECTION_INHERITED.has(k)) {
                     inherited[k] = v;
                 }
             }
@@ -313,7 +312,7 @@ function parseString(text, sourceFile) {
             if (Object.keys(sectionHeaders).length === 0) {
                 const inherited = {};
                 for (const [k, v] of Object.entries(currentHeaders)) {
-                    if (SECTION_INHERITED.has(k)) {
+                    if (_headers_1.SECTION_INHERITED.has(k)) {
                         inherited[k] = v;
                     }
                 }
@@ -343,12 +342,12 @@ function parseString(text, sourceFile) {
                 continue;
             }
             // V1 backward compat
-            if (keyword && keyword in V1_HEADER_MAP) {
-                const newKeyword = V1_HEADER_MAP[keyword];
+            if (keyword && keyword in _headers_1.V1_HEADER_MAP) {
+                const newKeyword = _headers_1.V1_HEADER_MAP[keyword];
                 addDiagnostic(types_1.Severity.WARNING, types_1.WarningCode.W010, `V1 format detected: @${keyword} mapped to @${newKeyword}`, lineNum);
                 keyword = newKeyword;
             }
-            if (keyword && !KNOWN_HEADERS.has(keyword)) {
+            if (keyword && !_headers_1.KNOWN_HEADERS.has(keyword)) {
                 addDiagnostic(types_1.Severity.WARNING, types_1.WarningCode.W002, `Unknown header keyword: @${keyword}`, lineNum);
             }
             if (keyword === "id" && value) {

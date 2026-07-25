@@ -1,7 +1,5 @@
+import { KNOWN_HEADERS, SECTION_INHERITED, V1_HEADER_MAP } from "./_headers";
 import { Action, Diagnostic, ErrorCode, FileRef, ParseResult, Record as MarkbackRecord, Severity, WarningCode } from "./types";
-
-const KNOWN_HEADERS = new Set(["id", "by", "file", "input", "tag", "reply-to", "action"]);
-const V1_HEADER_MAP: { [key: string]: string } = { uri: "id", source: "file", prior: "input" };
 
 const HEADER_PATTERN = /^@([a-z][a-z-]*)\s+(.+)$/;
 const FEEDBACK_DELIMITER = "<<<";
@@ -152,7 +150,7 @@ export function parseString(text: string, sourceFile?: string | null): ParseResu
 
   // sectionHeaders carries forward across <<< boundaries within a section.
   // A `---` separator clears them. @id is per-record and never inherited.
-  const SECTION_INHERITED = new Set(["file", "by", "tag", "input"]);
+  // SECTION_INHERITED comes from the shared header registry (./_headers).
   let sectionHeaders: { [key: string]: string } = {};
   let currentHeaders: { [key: string]: string } = {};
   // Actions are per-record and order-preserving — NOT section-inherited and NOT

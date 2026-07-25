@@ -1,0 +1,7 @@
+{
+  "$comment": "Single source of truth for Markback record headers, shared by the Python and JS libraries. Edit this file, then run `python scripts/gen_headers.py` to regenerate markback/_headers.py and packages/markbackjs/src/_headers.ts. A sync test in each library fails if the generated files drift from this source.",
+  "known": ["id", "by", "file", "input", "tag", "reply-to", "action"],
+  "canonical_order": ["id", "reply-to", "by", "action", "tag", "input", "file"],
+  "section_inherited": ["file", "by", "tag", "input"],
+  "v1_map": { "uri": "id", "source": "file", "prior": "input" }
+}

@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
+from ._headers import KNOWN_HEADERS, SECTION_INHERITED, V1_HEADER_MAP
 from .types import (
     Action,
     Diagnostic,
@@ -14,13 +15,6 @@ from .types import (
     Severity,
     WarningCode,
 )
-
-
-# V2 known header keywords
-KNOWN_HEADERS = {"id", "by", "file", "input", "tag", "reply-to", "action"}
-
-# V1 header mapping for backward compatibility
-V1_HEADER_MAP = {"uri": "id", "source": "file", "prior": "input"}
 
 # Patterns
 HEADER_PATTERN = re.compile(r"^@([a-z][a-z-]*)\s+(.+)$")
@@ -191,8 +185,6 @@ def parse_string(
     in_content: bool = False
     had_blank_line: bool = False
     past_file_headers: bool = False
-
-    SECTION_INHERITED = ("file", "by", "tag", "input")
 
     def finalize_record(feedback: str, end_line: int):
         """Create a record from current state, then reset for next segment."""

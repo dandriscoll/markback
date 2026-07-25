@@ -3,11 +3,37 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.writeRecordCanonical = writeRecordCanonical;
 exports.writeRecordsMulti = writeRecordsMulti;
 exports.writeString = writeString;
+const _headers_1 = require("./_headers");
 function feedbackIsMultiline(feedback) {
     return feedback.includes("\n");
 }
 function formatAction(a) {
     return `@action ${a.verb} ${a.timestamp}${a.actor ? ` ${a.actor}` : ""}`;
+}
+// Render the line(s) for one header of `record`, or [] when absent. Emission
+// order across headers is driven by CANONICAL_ORDER (from the shared header
+// registry); this owns only each header's own formatting.
+function renderHeader(record, name, compactFile = false) {
+    switch (name) {
+        case "id":
+            return record.id ? [`@id ${record.id}`] : [];
+        case "reply-to":
+            return record.replyTo ? [`@reply-to ${record.replyTo}`] : [];
+        case "by":
+            return record.by ? [`@by ${record.by}`] : [];
+        case "action":
+            return record.actions.map(formatAction);
+        case "tag":
+            return record.tags.length > 0 ? [`@tag ${record.tags.join(" ")}`] : [];
+        case "input":
+            return record.input ? [`@input ${record.input}`] : [];
+        case "file":
+            if (!record.file)
+                return [];
+            return compactFile ? [`@file ${record.file} <<< ${record.feedback}`] : [`@file ${record.file}`];
+        default:
+            return [];
+    }
 }
 function formatFeedback(feedback) {
     if (feedbackIsMultiline(feedback)) {
@@ -29,47 +55,16 @@ function writeRecordCanonical(record, preferCompact = true) {
     const lines = [];
     const useCompact = preferCompact && record.file !== null && !record.hasInlineContent() && !feedbackIsMultiline(record.feedback);
     if (useCompact) {
-        if (record.id) {
-            lines.push(`@id ${record.id}`);
+        // Compact format: headers on own lines, then @file ... <<< (which the
+        // canonical order already places last, carrying the feedback).
+        for (const name of _headers_1.CANONICAL_ORDER) {
+            lines.push(...renderHeader(record, name, true));
         }
-        if (record.replyTo) {
-            lines.push(`@reply-to ${record.replyTo}`);
-        }
-        if (record.by) {
-            lines.push(`@by ${record.by}`);
-        }
-        for (const action of record.actions) {
-            lines.push(formatAction(action));
-        }
-        if (record.tags.length > 0) {
-            lines.push(`@tag ${record.tags.join(" ")}`);
-        }
-        if (record.input) {
-            lines.push(`@input ${record.input}`);
-        }
-        lines.push(`@file ${record.file} <<< ${record.feedback}`);
     }
     else {
-        if (record.id) {
-            lines.push(`@id ${record.id}`);
-        }
-        if (record.replyTo) {
-            lines.push(`@reply-to ${record.replyTo}`);
-        }
-        if (record.by) {
-            lines.push(`@by ${record.by}`);
-        }
-        for (const action of record.actions) {
-            lines.push(formatAction(action));
-        }
-        if (record.tags.length > 0) {
-            lines.push(`@tag ${record.tags.join(" ")}`);
-        }
-        if (record.input) {
-            lines.push(`@input ${record.input}`);
-        }
-        if (record.file) {
-            lines.push(`@file ${record.file}`);
+        // Full format: headers in canonical order, then content and feedback.
+        for (const name of _headers_1.CANONICAL_ORDER) {
+            lines.push(...renderHeader(record, name));
         }
         if (record.hasInlineContent() && record.content !== null) {
             lines.push("");

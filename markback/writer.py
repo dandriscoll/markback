@@ -5,6 +5,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
+from ._headers import CANONICAL_ORDER
 from .types import Action, Record, FileRef
 
 
@@ -12,6 +13,33 @@ def _format_action(action: Action) -> str:
     """Render an @action header line: @action <verb> <timestamp> [actor]."""
     suffix = f" {action.actor}" if action.actor else ""
     return f"@action {action.verb} {action.timestamp}{suffix}"
+
+
+def _render_header(record: Record, name: str, compact_file: bool = False) -> list[str]:
+    """Render the line(s) for one header of ``record``, or [] when absent.
+
+    Emission order across headers is driven by CANONICAL_ORDER (from the shared
+    header registry); this function owns only each header's own formatting.
+    """
+    if name == "id":
+        return [f"@id {record.id}"] if record.id else []
+    if name == "reply-to":
+        return [f"@reply-to {record.reply_to}"] if record.reply_to else []
+    if name == "by":
+        return [f"@by {record.by}"] if record.by else []
+    if name == "action":
+        return [_format_action(a) for a in record.actions]
+    if name == "tag":
+        return [f"@tag {' '.join(record.tags)}"] if record.tags else []
+    if name == "input":
+        return [f"@input {record.input}"] if record.input else []
+    if name == "file":
+        if not record.file:
+            return []
+        if compact_file:
+            return [f"@file {record.file} <<< {record.feedback}"]
+        return [f"@file {record.file}"]
+    return []
 
 
 def _resolve_eol(path: Path) -> str:
@@ -76,36 +104,14 @@ def _write_record_canonical(
     )
 
     if use_compact:
-        # Compact format: headers on own lines, then @file ... <<<
-        if record.id:
-            lines.append(f"@id {record.id}")
-        if record.reply_to:
-            lines.append(f"@reply-to {record.reply_to}")
-        if record.by:
-            lines.append(f"@by {record.by}")
-        for action in record.actions:
-            lines.append(_format_action(action))
-        if record.tags:
-            lines.append(f"@tag {' '.join(record.tags)}")
-        if record.input:
-            lines.append(f"@input {record.input}")
-        lines.append(f"@file {record.file} <<< {record.feedback}")
+        # Compact format: headers on own lines, then @file ... <<< (which the
+        # canonical order already places last, carrying the feedback).
+        for name in CANONICAL_ORDER:
+            lines.extend(_render_header(record, name, compact_file=True))
     else:
-        # Full format
-        if record.id:
-            lines.append(f"@id {record.id}")
-        if record.reply_to:
-            lines.append(f"@reply-to {record.reply_to}")
-        if record.by:
-            lines.append(f"@by {record.by}")
-        for action in record.actions:
-            lines.append(_format_action(action))
-        if record.tags:
-            lines.append(f"@tag {' '.join(record.tags)}")
-        if record.input:
-            lines.append(f"@input {record.input}")
-        if record.file:
-            lines.append(f"@file {record.file}")
+        # Full format: headers in canonical order, then content and feedback.
+        for name in CANONICAL_ORDER:
+            lines.extend(_render_header(record, name))
 
         if record.has_inline_content():
             lines.append("")  # Blank line before content
@@ -340,16 +346,12 @@ def write_records_compact(records: list[Record]) -> str:
 def write_label_file(record: Record) -> str:
     """V1 compat: write a label file for sidecar mode."""
     lines: list[str] = []
-    if record.id:
-        lines.append(f"@id {record.id}")
-    if record.reply_to:
-        lines.append(f"@reply-to {record.reply_to}")
-    if record.by:
-        lines.append(f"@by {record.by}")
-    if record.tags:
-        lines.append(f"@tag {' '.join(record.tags)}")
-    if record.input:
-        lines.append(f"@input {record.input}")
+    # Sidecar label files carry no @file line (the content lives in the paired
+    # file); every other header follows the shared canonical order.
+    for name in CANONICAL_ORDER:
+        if name == "file":
+            continue
+        lines.extend(_render_header(record, name))
     lines.append(f"<<< {_format_feedback(record.feedback)}")
     return '\n'.join(lines) + "\n"
 

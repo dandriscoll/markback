@@ -1253,18 +1253,18 @@ full-record       = [headers] [content-block] feedback-line
 headers           = 1*header-line
 header-line       = "@" keyword SP value LF
 keyword           = 1*LOWER
-value             = *VCHAR
+value             = *(VCHAR / SP)                    ; freeform; may contain interior spaces; ends at LF
 
 content-block     = blank-line content
 content           = 1*content-line
-content-line      = *VCHAR LF                       ; any line not starting with <<<
+content-line      = *(VCHAR / SP) LF                 ; any line not starting with <<<
 
 blank-line        = LF
 
 ; === Feedback ===
 
 feedback-line     = "<<<" SP feedback-content LF
-feedback-content  = *VCHAR                           ; no LF allowed
+feedback-content  = *(VCHAR / SP)                    ; freeform; no LF allowed
 
 ; === Compact Record ===
 
