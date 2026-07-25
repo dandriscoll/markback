@@ -192,13 +192,12 @@ I absolutely love this product! Best purchase ever!
 ### 2. Compact — one record per line
 
 For labeling many files. `@file`, the path, ` <<< `, the feedback, all on one
-line. **No `---` between compact records**; blank lines between them are
-ignored. Other headers go on their own lines immediately above.
+line. **No `---` between compact records.** Other headers go on their own lines
+immediately above.
 
 ```
 @file ./photos/IMG_001.jpg <<< approved; scene=beach
 @file ./photos/IMG_002.jpg <<< rejected; too dark
-
 @id review-003
 @by dan@example.com
 @tag batch-1
@@ -206,6 +205,13 @@ ignored. Other headers go on their own lines immediately above.
 ```
 
 The line must start with `@file`; the path ends at the space before `<<<`.
+
+**Do not put a blank line before a compact record's headers.** The spec says
+blank lines between compact records are ignored; in 0.3.0 they are not — a
+blank line makes the parser discard the following record's own `@id`, `@by`,
+and `@tag` and inherit the previous record's values instead
+([#15](https://github.com/dandriscoll/markback/issues/15)). Pack the records
+together as above, or separate them with `---`.
 
 ### 3. Multi-segment section — several comments on one source
 
@@ -343,6 +349,13 @@ These are verified against the current implementation, not just the spec.
   Nothing fails loudly. Always write the blank line.
 - Content that does *not* start with `@` survives a missing blank line, but the
   file is flagged non-canonical (W008). Do not rely on it.
+- **A blank line before a compact record's headers loses them.** The next
+  record's `@id`, `@by`, and `@tag` are discarded and the previous record's
+  values are inherited in their place — wrong attribution, not missing
+  attribution, with no warning above W006. Known bug
+  ([#15](https://github.com/dandriscoll/markback/issues/15)); SPEC.md §3.5 and
+  §5.2 describe and show the shape that breaks. Pack compact records with no
+  blank line, or use `---`.
 - **A `%` line below the first record is content**, not a file header — file
   headers only exist at the top.
 - **`mb --normalize` reformats more than whitespace.** It expands multi-segment
