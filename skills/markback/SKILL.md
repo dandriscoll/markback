@@ -206,12 +206,13 @@ immediately above.
 
 The line must start with `@file`; the path ends at the space before `<<<`.
 
-**Do not put a blank line before a compact record's headers.** The spec says
-blank lines between compact records are ignored; in 0.3.0 they are not — a
-blank line makes the parser discard the following record's own `@id`, `@by`,
-and `@tag` and inherit the previous record's values instead
-([#15](https://github.com/dandriscoll/markback/issues/15)). Pack the records
-together as above, or separate them with `---`.
+**Blank lines between compact records are ignored** (spec §3.5). Each compact
+record keeps its own `@id`, `@by`, and `@tag` whether you pack the records
+together or leave a blank line between them. (In libraries ≤0.3.0 a blank line
+here discarded the following record's headers and inherited the previous
+record's values instead —
+[#15](https://github.com/dandriscoll/markback/issues/15), fixed in 0.3.1. If you
+may run against an older version, pack the records or separate them with `---`.)
 
 ### 3. Multi-segment section — several comments on one source
 
@@ -349,13 +350,13 @@ These are verified against the current implementation, not just the spec.
   Nothing fails loudly. Always write the blank line.
 - Content that does *not* start with `@` survives a missing blank line, but the
   file is flagged non-canonical (W008). Do not rely on it.
-- **A blank line before a compact record's headers loses them.** The next
-  record's `@id`, `@by`, and `@tag` are discarded and the previous record's
-  values are inherited in their place — wrong attribution, not missing
-  attribution, with no warning above W006. Known bug
-  ([#15](https://github.com/dandriscoll/markback/issues/15)); SPEC.md §3.5 and
-  §5.2 describe and show the shape that breaks. Pack compact records with no
-  blank line, or use `---`.
+- **Blank lines between compact records are ignored** (fixed in 0.3.1). Each
+  record keeps its own `@id`, `@by`, and `@tag`. In libraries ≤0.3.0 a blank
+  line before a compact record's headers silently discarded them and inherited
+  the previous record's values instead
+  ([#15](https://github.com/dandriscoll/markback/issues/15)) — if you may run
+  against an older version, pack compact records with no blank line, or use
+  `---`.
 - **A `%` line below the first record is content**, not a file header — file
   headers only exist at the top.
 - **`mb --normalize` reformats more than whitespace.** It expands multi-segment
@@ -363,15 +364,17 @@ These are verified against the current implementation, not just the spec.
   compact layout when *every* record in the file qualifies for it. Hand-authored
   sections and mixed files do not round-trip byte-for-byte. That is cosmetic,
   not semantic — but do not normalize a file whose hand layout you care about.
-- **W008 is noisy — do not chase it.** The check is a byte comparison of the
-  file against what the writer would emit, *with the `%` headers stripped*. So
-  **any file containing `%markback`, `%scope`, or `%covers` always reports
-  W008**, correctly written or not. It also fires on a blank line before `---`,
-  on a `@file`-only record written in full layout rather than compact, and on a
-  fence whose body has no newline (that collapses back to a single line). Treat
-  W008 as "differs from `mb --normalize`", not as an error, and silence it with
-  `--no-canonical-check` when linting a file with `%` headers. The spec's own
-  `---` examples do not lint clean either.
+- **W008 flags non-canonical formatting — it is informational, not an error.**
+  The check byte-compares the file against what the writer would emit. It fires
+  on a blank line before `---`, on a `@file`-only record written in full layout
+  rather than compact, and on a fence whose body has no newline (that collapses
+  back to a single line). Treat W008 as "differs from `mb --normalize`" and run
+  `mb --normalize` to clear it. (In libraries ≤0.3.0 the comparison dropped the
+  `%` headers, so *any* file containing `%markback`, `%scope`, or `%covers`
+  always reported W008 —
+  [#14](https://github.com/dandriscoll/markback/issues/14), fixed in 0.3.1; on
+  those versions silence it with `--no-canonical-check` when linting a file with
+  `%` headers.)
 - **Line endings on write.** The libraries preserve an existing file's
   convention and otherwise use the OS default (CRLF on Windows). Writing by
   hand, use LF; a CRLF file is accepted and normalized on read.
