@@ -211,3 +211,11 @@ V1 headers (`@uri`, `@source`, `@prior`) are automatically mapped to V2 (`@id`, 
 
 Validate with `mb --lint file.mb`. Add `--no-canonical-check` if the file has
 `%` headers — W008 always fires on those.
+
+## Hard-won constraints
+
+- **markback ships the same logic three times — a parser, linter, or writer bug fixed in one almost always exists in the others.** There is a Python library, a hand-ported JS library (`packages/markbackjs`), and a VS Code extension. Fix and regression-test every port in the same commit; a single-language fix leaves the class live.
+- **When two syntaxes must parse identically, assert their EQUALITY, not each one's absolute output.** The durable guard against a silent-corruption parser bug is a convergence test — "blank separator == no separator == `---` produce identical records" — because per-syntax golden assertions can all be individually wrong in the same direction.
+- **Constants duplicated across the ports get one generated source plus a drift test.** Warning codes, error codes, V1 header maps: define them in a single JSON source, generate the per-language modules, and add a test that fails when they diverge.
+- **Header-emitting code MUST iterate the canonical order registry, never its own list.** `write_label_file` silently dropped `@action` precisely because it kept a hand-maintained header list. Any new code that emits headers consumes the registry.
+- **Close the issue in the commit that ships the fix.** A fix shipped in v0.3.6 stayed open and was re-investigated in a later sweep. Use a closing keyword in the fix commit, or close immediately after push.
